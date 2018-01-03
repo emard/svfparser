@@ -11,7 +11,14 @@ enum
  LS_SLASH,
  LS_COMMENT,
  LS_TEXT,
- LS_SEMICOLON,
+};
+
+enum
+{
+ TS_SPACE=0,
+ TS_WORD,
+ TS_NUMBER,
+ TS_BRACKET,
 };
 
 // index = position in the stream (0 resets FSM)
@@ -24,7 +31,7 @@ enum
 // -1 - finished, error
 int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_t final)
 {
-  printf("%d %d\n", index, final);
+  printf("index %d final %d\n", index, final);
   static uint8_t lstate = LS_SPACE;
   static uint32_t line_count = 0;
   if(index == 0)
@@ -37,13 +44,15 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
   for(i = 0; i < length; i++)
   {
     c = packet[i];
-    printf("%c", c);
+    // ****** COMMENT REJECTION
     switch(c)
     {
       case '!':
         lstate = LS_COMMENT;
         break;
       case '/':
+        if(lstate == LS_COMMENT)
+          break;
         if(lstate == LS_SLASH)
           lstate = LS_COMMENT;
         else
@@ -51,11 +60,19 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
         break;
       case '\n':
         line_count++; // this is newline, similar as space
+        if(lstate == LS_COMMENT)
+        {
+          lstate = LS_SPACE;
+          break;
+        } // FALL THRU
       case ' ':
       case '\t':
+        if(lstate == LS_COMMENT)
+          break;
         if(lstate == LS_SLASH)
         {
-          puts("space after single '/'");
+          puts("?space after single '/'");
+          lstate = LS_SPACE;
           break;
         }
         if(lstate == LS_SPACE)
@@ -67,10 +84,16 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
         // check do we have now complete number or reserved word
         break;
       default:
+        if(lstate == LS_COMMENT)
+          break;
         // the text
+        //printf("char '%c'\n", c);
+        //puts("entering text state");
         lstate = LS_TEXT;
         break;
     }
+    if(lstate == LS_TEXT)
+      printf("%c", c);
   }
   printf("line count %d\n", line_count);
   return 0;

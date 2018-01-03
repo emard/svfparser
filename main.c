@@ -13,7 +13,6 @@ int packetize(char *filename, size_t size)
     return -1;
   }
   uint8_t *packet_data = (uint8_t *) malloc(size * sizeof(uint8_t));
-  // size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream);
   size_t packet_len;
   size_t index = 0;
 
