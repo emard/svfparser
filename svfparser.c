@@ -21,6 +21,94 @@ enum
  TS_BRACKET,
 };
 
+// enumerated (tokenized) reserved words
+enum 
+{
+  CMD_ENDDR=0, // Specifies default end state for DR scan operations.
+  CMD_ENDIR, // Specifies default end state for IR scan operations.
+  CMD_FREQUENCY, // Specifies maximum test clock frequency for IEEE 1149.1 bus operations.
+  CMD_HDR, // (Header Data Register) Specifies a header pattern that is prepended to the beginning of subsequent DR scan operations.
+  CMD_HIR, // (Header Instruction Register) Specifies a header pattern that is prepended to the beginning of subsequent IR scan operations.
+  CMD_PIO, // (Parallel Input/Output) Specifies a parallel test pattern.
+  CMD_PIOMAP, // (Parallel Input/Output Map) Maps PIO column positions to a logical pin.
+  CMD_RUNTEST, // Forces the IEEE 1149.1 bus to a run state for a specified number of clocks or a specified time period.
+  CMD_SDR, // (Scan Data Register) Performs an IEEE 1149.1 Data Register scan.
+  CMD_SIR, // (Scan Instruction Register) Performs an IEEE 1149.1 Instruction Register scan.
+  CMD_STATE, // Forces the IEEE 1149.1 bus to a specified stable state.
+  CMD_TDR, // (Trailer Data Register) Specifies a trailer pattern that is appended to the end of subsequent DR scan operations.
+  CMD_TIR, // (Trailer Instruction Register) Specifies a trailer pattern that is appended to the end of subsequent IR scan operations.
+  CMD_TRST, // (Test ReSeT) Controls the optional Test Reset line.
+  CMD_NUM // LAST: represents number of reserved words
+};
+
+char *Commands[] =
+{
+  [CMD_ENDDR] = "ENDDR",
+  [CMD_ENDIR] = "ENDIR",
+  [CMD_FREQUENCY] = "FREQUENCY",
+  [CMD_HDR] = "HDR",
+  [CMD_HIR] = "HIR",
+  [CMD_PIO] = "PIO",
+  [CMD_PIOMAP] = "PIOMAP",
+  [CMD_RUNTEST] = "RUNTEST",
+  [CMD_SDR] = "SDR",
+  [CMD_SIR] = "SIR",
+  [CMD_STATE] = "STATE",
+  [CMD_TDR] = "TDR",
+  [CMD_TIR] = "TIR",
+  [CMD_TRST] = "TRST",
+};
+
+// quicksearch: first 4 chars are enough 
+// to determine the command
+#define CMDS_ENOUGH_CHARS 4
+
+// TAP states enumerated/tokenized
+enum libxsvf_tap_state 
+{
+	/* Special States */
+	LIBXSVF_TAP_INIT = 0,
+	LIBXSVF_TAP_RESET = 1,
+	LIBXSVF_TAP_IDLE = 2,
+	/* DR States */
+	LIBXSVF_TAP_DRSELECT = 3,
+	LIBXSVF_TAP_DRCAPTURE = 4,
+	LIBXSVF_TAP_DRSHIFT = 5,
+	LIBXSVF_TAP_DREXIT1 = 6,
+	LIBXSVF_TAP_DRPAUSE = 7,
+	LIBXSVF_TAP_DREXIT2 = 8,
+	LIBXSVF_TAP_DRUPDATE = 9,
+	/* IR States */
+	LIBXSVF_TAP_IRSELECT = 10,
+	LIBXSVF_TAP_IRCAPTURE = 11,
+	LIBXSVF_TAP_IRSHIFT = 12,
+	LIBXSVF_TAP_IREXIT1 = 13,
+	LIBXSVF_TAP_IRPAUSE = 14,
+	LIBXSVF_TAP_IREXIT2 = 15,
+	LIBXSVF_TAP_IRUPDATE = 16
+};
+
+char *Tap_states[] =
+{
+  [LIBXSVF_TAP_INIT] = "INIT",
+  [LIBXSVF_TAP_RESET] = "RESET",
+  [LIBXSVF_TAP_IDLE] = "IDLE",
+  [LIBXSVF_TAP_DRSELECT] = "DRSELECT",
+  [LIBXSVF_TAP_DRCAPTURE] = "DRCAPTURE",
+  [LIBXSVF_TAP_DRSHIFT] = "DRSHIFT",
+  [LIBXSVF_TAP_DREXIT1] = "DREXIT1",
+  [LIBXSVF_TAP_DRPAUSE] = "DRPAUSE",
+  [LIBXSVF_TAP_DREXIT2] = "DREXIT2",
+  [LIBXSVF_TAP_DRUPDATE] = "DRUPDATE",
+  [LIBXSVF_TAP_IRSELECT] = "IRSELECT",
+  [LIBXSVF_TAP_IRCAPTURE] = "IRCAPTURE",
+  [LIBXSVF_TAP_IRSHIFT] = "IRSHIFT",
+  [LIBXSVF_TAP_IREXIT1] = "IREXIT1",
+  [LIBXSVF_TAP_IRPAUSE] = "IRPAUSE",
+  [LIBXSVF_TAP_IREXIT2] = "IREXIT2",
+  [LIBXSVF_TAP_IRUPDATE] = "IRUPDATE"
+};
+
 // index = position in the stream (0 resets FSM)
 // content must come in sequential order
 // length = data length in packet
@@ -88,7 +176,7 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
         // check do we have now complete number or reserved word
         lstate = LS_SPACE;
         if(lbracket == 0)
-          printf(" ");
+          printf("_");
         break;
       default:
         if(lstate == LS_COMMENT)
