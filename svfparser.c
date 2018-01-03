@@ -97,9 +97,6 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
           lbracket++;
         if(c == ')')
           lbracket--;
-        // the text
-        //printf("char '%c'\n", c);
-        //puts("entering text state");
         lstate = LS_TEXT;
         break;
     }
