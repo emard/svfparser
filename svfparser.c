@@ -34,10 +34,12 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
   printf("index %d final %d\n", index, final);
   static uint8_t lstate = LS_SPACE;
   static uint32_t line_count = 0;
+  static uint8_t lbracket = 0;
   if(index == 0)
   {
     lstate = LS_SPACE;
     line_count = 0;
+    lbracket = 0;
   }
   uint32_t i;
   char c;
@@ -59,6 +61,7 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
           lstate = LS_SLASH;
         break;
       case '\n':
+        c = ' '; // rewrite as simple space
         line_count++; // this is newline, similar as space
         if(lstate == LS_COMMENT)
         {
@@ -67,6 +70,7 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
         } // FALL THRU
       case ' ':
       case '\t':
+        c = ' '; // rewrite as simple space
         if(lstate == LS_COMMENT)
           break;
         if(lstate == LS_SLASH)
@@ -82,10 +86,17 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
         }
         // this is first space probably after some some text.
         // check do we have now complete number or reserved word
+        lstate = LS_SPACE;
+        if(lbracket == 0)
+          printf(" ");
         break;
       default:
         if(lstate == LS_COMMENT)
           break;
+        if(c == '(')
+          lbracket++;
+        if(c == ')')
+          lbracket--;
         // the text
         //printf("char '%c'\n", c);
         //puts("entering text state");
@@ -93,7 +104,9 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
         break;
     }
     if(lstate == LS_TEXT)
+    {
       printf("%c", c);
+    }
   }
   printf("line count %d\n", line_count);
   return 0;
