@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-
+#include "svfparser.h"
 
 // get chunk by chunk (simulate network) and call the parser
 int packetize(char *filename, size_t size)
@@ -15,15 +15,17 @@ int packetize(char *filename, size_t size)
   uint8_t *packet_data = (uint8_t *) malloc(size * sizeof(uint8_t));
   // size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream);
   size_t packet_len;
-  size_t total_len = 0;
+  size_t index = 0;
 
   while(!feof(fp))
   {
     packet_len = fread(packet_data, 1, size, fp);
-    total_len += packet_len;
+    int final = packet_len < size ? 1 : 0;
+    parse_svf_packet(packet_data, index, packet_len, final);
+    index += packet_len;
     printf("packet len %d\n", packet_len);
   }
-  printf("total len %d\n", total_len);
+  printf("total len %d\n", index);
   free(packet_data);
   return 0;
 }
