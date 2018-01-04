@@ -6,7 +6,13 @@
 
 // max bytes allowed to allocate per bitfield
 // HDR,HIR,TDR,TIR each may need 0-4 bitfields
-// SDR,SIR each may need 0-3 bitfields (TDI outputs immediately)
+// SDR,SIR need 1 buffer, they output data
+// immediately, buffer can be alloced at invocation of
+// TDI, even shorter than neccessary. In this buffer
+// TDO response is stored until the buffer is full
+// and excess data discarded with warning message.
+// Response (even partial) can be optionally used later
+// for masking and verification
 const int MAX_alloc = 30000;
 
 // lowest level lexical parser states
@@ -175,6 +181,20 @@ char *bsf_name[] =
   [BSF_NUM] = NULL
 };
 
+/*
+the bitbanger
+bsf field type
+BSF_*: the field we work on, action to take
+direct: 0-indirect mode, 1-direct mode
+*d: pointer to data (byte addressable)
+n: number of bits to bang
+*/
+int8_t bitbang(int8_t bsf, int8_t direct, uint8_t *d, uint32_t n)
+{
+
+
+}
+
 /* ******************* BEGIN COMMAND SERVICE FUNCTIONS ******************* */
 /*
 input: '!' - resets global parser state
@@ -196,7 +216,7 @@ int8_t cmd_pio(char c)
 struct S_bitseq
 {
   uint32_t length;
-  uint8_t bitbang; // execute I/O activity during parsing
+  uint8_t direct; // direct execute I/O activity during parsing
   uint32_t allocated[BSF_NUM]; // how many bytes are allocated in field[]
   uint8_t *field[BSF_NUM]; // *tdo, *tdi, *mask, *smask;
 };
@@ -204,8 +224,8 @@ struct S_bitseq
 // parsed bit sequence is global state
 // bitbanger needs to access them all
 // initialize all as NULL pointers (unallocated space)
-// 1 for immediate I/O (they TDI won't be buffered)
 // reallocating them as needed
+// 1 for direct I/O (no allocation, no buffering)
 struct S_bitseq BS_hdr = { 0, 0, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
 struct S_bitseq BS_hir = { 0, 0, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
 struct S_bitseq BS_sdr = { 0, 1, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
@@ -327,9 +347,12 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
         digitindex = 0;
         printf("open");
         state = BSPS_VALUE;
-        // bitfield "TDI" of bitsequence SDR,SIR
-        // won't be allocated (memory saving with direct bitbanging)
-        if(seq->bitbang > 0 && tbfname == BSF_TDI)
+        // for bitsequence SDR,SIR (direct)
+        // only bitfield "TDI" will be allocated
+        // (memory saving with direct bitbanging)
+        // it is allowed to allocate less than required length
+        // just issue some warnings
+        if(seq->direct > 0 && tbfname != BSF_TDI)
           break; // skip the rest of memory allocation
         // realloc to length now
         // calculate bytes needed to allocate
@@ -341,7 +364,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
             alloc_bytes, MAX_alloc);
           alloc_bytes = MAX_alloc;
         }
-        // realloc now except bitfield "TDI" of bitsequence SDR,SIR
+        // realloc now only bitfield "TDI" of bitsequence SDR,SIR
         seq->field[tbfname] = realloc(seq->field[tbfname], alloc_bytes);
         if(seq->field[tbfname] == NULL)
         {
@@ -367,10 +390,13 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
         // fill hex into allocated space
         // conversion from ascii to hex digit (binary lower 4-bits)
         uint8_t hexdigit = c < 'A' ? c - '0' : c + 10 - 'A';
+        // todo: 8-bit buffering
+        // work here with complete bytes
 
-        if(seq->bitbang > 0 && tbfname == BSF_TDI)
+        if(seq->direct > 0)
         {
           // apply direct bitbanging now
+          printf("=");
         }
         else
         {
@@ -389,6 +415,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
       }
       if(c == ')')
       {
+        // todo: bitbang or store incomplete byte buffered above
         printf("close");
         bfname[0] = '\0';
         bfnamelen = 0;
