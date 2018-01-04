@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include "svfparser.h"
-
+#include <string.h>
 #include <stdio.h>
 
 // lowest level lexical parser states
@@ -126,8 +126,12 @@ char *Tap_states[] =
 // < 0 : command not found
 int8_t search_cmd(char *cmd)
 {
-  printf("<SEARCH>");
-  return 1;
+  // printf("<SEARCH %s>", cmd);
+  int i;
+  for(i = 0; i < CMD_NUM; i++)
+    if(strcmp(cmd, Commands[i]) == 0)
+      return i;
+  return -1;
 }
 
 
@@ -153,8 +157,8 @@ int8_t commandstate(char c)
           // looking for non-space
           if(c != ' ')
           {
-            cmdindex = 0;
             cmdbuf[0] = c;
+            cmdindex = 1;
             command = -1;
             cdstate = CD_START;
           }
@@ -168,7 +172,10 @@ int8_t commandstate(char c)
             if(command < 0)
               cdstate = CD_ERROR;
             else
+            {
+              printf("<found %s>", Commands[command]);
               cdstate = CD_EXEC;
+            }
             break;
           }
           // limited buffering
@@ -179,12 +186,13 @@ int8_t commandstate(char c)
           }
           break;
         case CD_EXEC:
-          // executing
+          // executing -- switch various commands
           if(c == ';')
             cdstate = CD_INIT;
           break;
         case CD_ERROR:
           // error
+          return -1;
           break;
   }
 
@@ -205,6 +213,7 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
   static uint8_t lstate = LS_SPACE;
   static uint32_t line_count = 0;
   static uint8_t lbracket = 0;
+  static uint8_t cmderr = 0;
   if(index == 0)
   {
     lstate = LS_SPACE;
@@ -261,7 +270,7 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
         if(lbracket == 0)
         {
           printf("_");
-          commandstate(c); // process the space
+          cmderr = commandstate(c); // process the space
         }
         break;
       default:
@@ -280,9 +289,11 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
       // only active text appears here. comments and 
       // multiple spaces are filtered out
       printf("%c", c);
-      commandstate(c);      
+      cmderr = commandstate(c);      
     }
   }
+  if(cmderr)
+    printf("command error\n");
   printf("line count %d\n", line_count);
   return 0;
 } 
