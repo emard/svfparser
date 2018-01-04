@@ -97,7 +97,9 @@ enum libxsvf_tap_state
 	LIBXSVF_TAP_IREXIT1 = 13,
 	LIBXSVF_TAP_IRPAUSE = 14,
 	LIBXSVF_TAP_IREXIT2 = 15,
-	LIBXSVF_TAP_IRUPDATE = 16
+	LIBXSVF_TAP_IRUPDATE = 16,
+	/* numbef of them */
+	LIBXSVF_TAP_NUM = 17,
 };
 
 char *Tap_states[] =
@@ -118,16 +120,30 @@ char *Tap_states[] =
   [LIBXSVF_TAP_IREXIT1] = "IREXIT1",
   [LIBXSVF_TAP_IRPAUSE] = "IRPAUSE",
   [LIBXSVF_TAP_IREXIT2] = "IREXIT2",
-  [LIBXSVF_TAP_IRUPDATE] = "IRUPDATE"
+  [LIBXSVF_TAP_IRUPDATE] = "IRUPDATE",
+  [LIBXSVF_TAP_NUM] = NULL
 };
+
+// search command
+// >= 0 : tokenized command
+// < 0 : command not found
+// list is array of strings, null pointer terminated
+int8_t search_name(char *cmd, char *list[])
+{
+  // printf("<SEARCH %s>", cmd);
+  int i;
+  for(i = 0; list[i] != NULL; i++)
+    if(strcmp(cmd, list[i]) == 0)
+      return i;
+  return -1;
+}
 
 // common states for HDR,HIR,SDR,SIR,TDR,TIR
 enum bit_sequence_parsing_states
 {
   BSPS_INIT = 0,
   BSPS_LENGTH, // taking the length of the bits array
-  BSPS_NAME1, // first char of name
-  BSPS_NAMECONT, // continue taking char for the name
+  BSPS_NAME, // field name
   BSPS_VALUEOPEN, // open parenthesis
   BSPS_VALUE1, // first char of value
   BSPS_VALUECONT, // continue taking bits array data
@@ -141,9 +157,18 @@ enum bit_sequence_field
   BSF_TDI = 0,
   BSF_TDO,
   BSF_MASK,
-  BSF_SMASK
+  BSF_SMASK,
+  BSF_NUM
 };
 
+char *bsf_name[] =
+{
+  [BSF_TDI] = "TDI",
+  [BSF_TDO] = "TDO",
+  [BSF_MASK] = "MASK",
+  [BSF_SMASK] = "SMASK",
+  [BSF_NUM] = NULL
+};
 
 /* ******************* BEGIN COMMAND SERVICE FUNCTIONS ******************* */
 /*
@@ -173,9 +198,10 @@ struct S_bitseq
 // bitbanger needs to access them all
 struct S_bitseq BS_hdr, BS_hir, BS_sdr, BS_sir, BS_tdr, BS_tir;
 
+// "SMASK" is longest = 5
 enum bitfield_name_max_len
 {
-  BF_NAME_MAXLEN = 20
+  BF_NAME_MAXLEN = 5
 };
 
 // common parser for
@@ -184,17 +210,20 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
 {
   static int8_t state = BSPS_INIT;
   static int bfnamelen = 0;
-  static char name[BF_NAME_MAXLEN];
+  static char bfname[BF_NAME_MAXLEN+1];
+  static uint8_t tbfname = -1; // tokenized bitfield name
   if(c == '\0')
   { // reset parsing state
     state = 0;
     bfnamelen = 0;
+    tbfname = -1;
     return 0;
   }
   if(c == '!')
   { // complete reset, forgets everything
     state = 0;
     bfnamelen = 0;
+    tbfname = -1;
     seq->length = 0;
     return 0;
   }
@@ -215,6 +244,22 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
       }
       break;
     case BSPS_LENGTH:
+      // take length decimal value digit by digit
+      if(c >= '0' && c <= '9')
+      {
+        // take another digit
+        seq->length = (seq->length * 10) + c - '0';
+        break;
+      }
+      if(c == ' ')
+      { // space - end of length, proceed getting the name
+        printf("L%d", seq->length);
+        bfname[0] = '\0';
+        bfnamelen = 0;
+        tbfname = -1;
+        state = BSPS_NAME;
+        break;
+      }
       if(c == ';')
       {
         if(seq->length == 0)
@@ -226,43 +271,37 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
           state = BSPS_ERROR;
         break;          
       }
+      break;
+    case BSPS_NAME:
       if(c == ' ')
-      { // space - end of length, proceed getting the name
-        state = BSPS_NAME1;
-        printf("L%d", seq->length);
-        break;
-      }
-      // take length decimal value digit by digit
-      if(c >= '0' && c <= '9')
       {
-        // take another digit
-        seq->length = (seq->length * 10) + c - '0';
-        break;
-      }
-      break;
-    case BSPS_NAME1:
-      if(c >= 'A' && c <= 'Z')
-      {
-        state = BSPS_NAMECONT;
-        break;
-      }
-      break;
-    case BSPS_NAMECONT:
-      if(c = ' ')
-      {
+        bfname[bfnamelen] = '\0'; // 0-terminate
+        tbfname = search_name(bfname, bsf_name);
+        if(tbfname >= 0)
+          printf("tbfname '%s'", bsf_name[tbfname]);
         state = BSPS_VALUEOPEN;
         break;
       }
       if(c >= 'A' && c <= 'Z')
       {
+        if(bfnamelen < BF_NAME_MAXLEN)
+          bfname[bfnamelen++] = c;
+        else
+        {
+          // name too long, error
+          bfname[bfnamelen] = '\0'; // 0-terminate
+          state = BSPS_ERROR;
+        }
         break;
       }
+      state = BSPS_ERROR;
       break;
     default:
       state = BSPS_ERROR;
       break;
   }
-  printf("*");
+  // printf("%c*", c);
+  return 0;
 }
 
 int8_t cmd_hdr(char c)
@@ -320,20 +359,6 @@ struct S_cmd_service Cmd_service[] =
 };
 /* ******************* END COMMAND SERVICE FUNCTIONS ******************* */
 
-
-// search command
-// >= 0 : tokenized command
-// < 0 : command not found
-// list is array of strings, null pointer terminated
-int8_t search_name(char *cmd, char *list[])
-{
-  // printf("<SEARCH %s>", cmd);
-  int i;
-  for(i = 0; list[i] != NULL; i++)
-    if(strcmp(cmd, list[i]) == 0)
-      return i;
-  return -1;
-}
 
 
 // '\0' char will reset command state (new line)
