@@ -2,6 +2,12 @@
 #include "svfparser.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+
+// max bytes allowed to allocate per bitfield
+// HDR,HIR,TDR,TIR each may need 0-4 bitfields
+// SDR,SIR each may need 0-3 bitfields (TDI outputs immediately)
+const int MAX_alloc = 30000;
 
 // lowest level lexical parser states
 // to eliminate comments and whitespaces
@@ -190,14 +196,24 @@ int8_t cmd_pio(char c)
 struct S_bitseq
 {
   uint32_t length;
-  uint8_t *data;
+  uint8_t bitbang; // execute I/O activity during parsing
+  uint32_t allocated[BSF_NUM]; // how many bytes are allocated in field[]
+  uint8_t *field[BSF_NUM]; // *tdo, *tdi, *mask, *smask;
 };
 
 // parsed bit sequence is global state
 // bitbanger needs to access them all
-struct S_bitseq BS_hdr, BS_hir, BS_sdr, BS_sir, BS_tdr, BS_tir;
+// initialize all as NULL pointers (unallocated space)
+// 1 for immediate I/O (they TDI won't be buffered)
+// reallocating them as needed
+struct S_bitseq BS_hdr = { 0, 0, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
+struct S_bitseq BS_hir = { 0, 0, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
+struct S_bitseq BS_sdr = { 0, 1, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
+struct S_bitseq BS_sir = { 0, 1, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
+struct S_bitseq BS_tdr = { 0, 0, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
+struct S_bitseq BS_tir = { 0, 0, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
 
-// "SMASK" is longest = 5
+// bitfield name "SMASK" is longest: 5 chars
 enum bitfield_name_max_len
 {
   BF_NAME_MAXLEN = 5
@@ -211,11 +227,13 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
   static int bfnamelen = 0;
   static char bfname[BF_NAME_MAXLEN+1];
   static uint8_t tbfname = -1; // tokenized bitfield name
+  static int32_t digitindex = 0; // count hex digits of the bitfield
   if(c == '\0')
   { // reset parsing state
     state = 0;
     bfnamelen = 0;
     tbfname = -1;
+    digitindex = 0;
     return 0;
   }
   if(c == '!')
@@ -223,6 +241,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
     state = 0;
     bfnamelen = 0;
     tbfname = -1;
+    digitindex = 0;
     seq->length = 0;
     return 0;
   }
@@ -298,18 +317,74 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
     case BSPS_VALUEOPEN:
       if(c == '(')
       {
-        // realloc to length now
+        // sanity check: we must know bitfield name
+        // and have it tokenized, otherwise it's error
+        if(tbfname < 0)
+        {
+          state = BSPS_ERROR;
+          break;        
+        }
+        digitindex = 0;
         printf("open");
         state = BSPS_VALUE;
+        // bitfield "TDI" of bitsequence SDR,SIR
+        // won't be allocated (memory saving with direct bitbanging)
+        if(seq->bitbang > 0 && tbfname == BSF_TDI)
+          break; // skip the rest of memory allocation
+        // realloc to length now
+        // calculate bytes needed to allocate
+        uint32_t alloc_bytes = (seq->length+7)/8;
+        // apply MAX alloc limit
+        if(alloc_bytes > MAX_alloc)
+        {
+          printf("WARNING: required %d bytes for bitfield exceeds limit. Allocating only %d bytes\n",
+            alloc_bytes, MAX_alloc);
+          alloc_bytes = MAX_alloc;
+        }
+        // realloc now except bitfield "TDI" of bitsequence SDR,SIR
+        seq->field[tbfname] = realloc(seq->field[tbfname], alloc_bytes);
+        if(seq->field[tbfname] == NULL)
+        {
+          printf("Memory Allocation Failed\n");
+          state = BSPS_ERROR;
+          break;
+        }
+        seq->allocated[tbfname] = alloc_bytes; // track how much is allocated
       }
       else
         state = BSPS_ERROR;
       break;
     case BSPS_VALUE:
+      // sanity check: we must know bitfield name
+      // and have it tokenized, otherwise it's error
       if( (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') )
       {
+        if(tbfname < 0)
+        {
+          state = BSPS_ERROR;
+          break;        
+        }
         // fill hex into allocated space
-        // don't exceed the length
+        // conversion from ascii to hex digit (binary lower 4-bits)
+        uint8_t hexdigit = c < 'A' ? c - '0' : c + 10 - 'A';
+
+        if(seq->bitbang > 0 && tbfname == BSF_TDI)
+        {
+          // apply direct bitbanging now
+        }
+        else
+        {
+          // buffer the data for later use
+          // don't exceed the allocated length
+          uint32_t byteindex = digitindex/2;
+          if( byteindex < seq->allocated[tbfname] )
+          {
+            uint8_t value_byte = seq->field[tbfname][byteindex];
+            value_byte = (value_byte << 8) | hexdigit;
+            seq->field[tbfname][byteindex] = value_byte;
+          }
+        }
+        digitindex++;
         break;
       }
       if(c == ')')
