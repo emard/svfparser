@@ -59,9 +59,21 @@ char *Commands[] =
   [CMD_TRST] = "TRST",
 };
 
-// quicksearch: first 4 chars are enough 
-// to determine the command
+// quick search: first 4 chars of command are enough 
 #define CMDS_ENOUGH_CHARS 4
+// maximal command length (buffering)
+#define CMDS_MAX_CHARS 15
+
+// find which command matches it and track the rest of it
+// to eventually report unknown/unsupported command
+enum cmd_detection_states
+{
+  CD_INIT = 0, // initial accumulation of first non-space character
+  CD_START, // buffer the rest until the space
+  CD_EXEC, // executing the command
+  CD_ERROR, // command not found or not matching (syntax error)
+};
+
 
 // TAP states enumerated/tokenized
 enum libxsvf_tap_state 
@@ -109,6 +121,76 @@ char *Tap_states[] =
   [LIBXSVF_TAP_IRUPDATE] = "IRUPDATE"
 };
 
+// search command
+// >= 0 : tokenized command
+// < 0 : command not found
+int8_t search_cmd(char *cmd)
+{
+  printf("<SEARCH>");
+  return 1;
+}
+
+
+// '\0' char will reset command state
+int8_t commandstate(char c)
+{
+  static uint32_t cmdindex = 0;
+  static char cmdbuf[CMDS_MAX_CHARS+1];  // buffer command chars + null
+  static int8_t command = -1; // detected command
+  static uint8_t cdstate = CD_INIT; // first few chars of command detection state
+  
+  if(c == '\0')
+  {
+    cmdindex = 0;
+    command = -1;
+    cdstate = CD_INIT;
+    return 0;
+  }
+
+  switch(cdstate)
+  {
+        case CD_INIT:
+          // looking for non-space
+          if(c != ' ')
+          {
+            cmdindex = 0;
+            cmdbuf[0] = c;
+            command = -1;
+            cdstate = CD_START;
+          }
+          break;
+        case CD_START:
+          if(c == ' ')
+          {
+            // space found, search for the buffered command
+            cmdbuf[cmdindex] = '\0'; // 0-terminate
+            command = search_cmd(cmdbuf);
+            if(command < 0)
+              cdstate = CD_ERROR;
+            else
+              cdstate = CD_EXEC;
+            break;
+          }
+          // limited buffering
+          if(cmdindex < CMDS_MAX_CHARS)
+          {
+            cmdbuf[cmdindex] = c;
+            cmdindex++;
+          }
+          break;
+        case CD_EXEC:
+          // executing
+          if(c == ';')
+            cdstate = CD_INIT;
+          break;
+        case CD_ERROR:
+          // error
+          break;
+  }
+
+  
+}
+
 // index = position in the stream (0 resets FSM)
 // content must come in sequential order
 // length = data length in packet
@@ -128,6 +210,7 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
     lstate = LS_SPACE;
     line_count = 0;
     lbracket = 0;
+    commandstate('\0');
   }
   uint32_t i;
   char c;
@@ -176,7 +259,10 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
         // check do we have now complete number or reserved word
         lstate = LS_SPACE;
         if(lbracket == 0)
+        {
           printf("_");
+          commandstate(c); // process the space
+        }
         break;
       default:
         if(lstate == LS_COMMENT)
@@ -188,9 +274,13 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
         lstate = LS_TEXT;
         break;
     }
+
     if(lstate == LS_TEXT)
     {
+      // only active text appears here. comments and 
+      // multiple spaces are filtered out
       printf("%c", c);
+      commandstate(c);      
     }
   }
   printf("line count %d\n", line_count);
