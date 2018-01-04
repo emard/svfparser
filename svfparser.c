@@ -399,19 +399,18 @@ int8_t commandstate(char c)
           break;
         case CD_EXEC:
           // executing
+          // sanity check
+          if(command < 0 || command >= CMD_NUM)
+            return -2; // strange, this should never happen
+          // call selected command service function
+          if(Cmd_service[command].service)
+            cxstate = Cmd_service[command].service(c);
           // semicolon to end command
           if(c == ';')
           {
             cdstate = CD_INIT;
             return 1; // command complete
           }
-          // sanity check
-          if(command < 0 || command >= CMD_NUM)
-            return -2; // strange, this should never happen
-          if(Cmd_service[command].service == NULL)
-            return 0; // no command service function
-          // executing -- call selected command service function
-          cxstate = Cmd_service[command].service(c);
           break;
         case CD_ERROR:
           // error
