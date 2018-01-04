@@ -145,9 +145,8 @@ enum bit_sequence_parsing_states
   BSPS_LENGTH, // taking the length of the bits array
   BSPS_NAME, // field name
   BSPS_VALUEOPEN, // open parenthesis
-  BSPS_VALUE1, // first char of value
-  BSPS_VALUECONT, // continue taking bits array data
-  BSPS_VALUECLOSE, // close parenthesis
+  BSPS_VALUE, // hex char of value
+  BSPS_NAME1, // after closed parenthesis expect another name
   BSPS_COMPLETE,
   BSPS_ERROR
 };
@@ -286,6 +285,54 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
       {
         if(bfnamelen < BF_NAME_MAXLEN)
           bfname[bfnamelen++] = c;
+        else
+        {
+          // name too long, error
+          bfname[bfnamelen] = '\0'; // 0-terminate
+          state = BSPS_ERROR;
+        }
+        break;
+      }
+      state = BSPS_ERROR;
+      break;
+    case BSPS_VALUEOPEN:
+      if(c == '(')
+      {
+        // realloc to length now
+        printf("open");
+        state = BSPS_VALUE;
+      }
+      else
+        state = BSPS_ERROR;
+      break;
+    case BSPS_VALUE:
+      if( (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') )
+      {
+        // fill hex into allocated space
+        // don't exceed the length
+        break;
+      }
+      if(c == ')')
+      {
+        printf("close");
+        bfname[0] = '\0';
+        bfnamelen = 0;
+        tbfname = -1;
+        state = BSPS_NAME1; // expect another name
+        break;
+      }
+      state = BSPS_ERROR;
+      break;
+    case BSPS_NAME1:
+      if(c == ' ') // ignore space
+        break;
+      if(c >= 'A' && c <= 'Z')
+      {
+        if(bfnamelen < BF_NAME_MAXLEN)
+        {
+          bfname[bfnamelen++] = c;
+          state = BSPS_NAME;
+        }
         else
         {
           // name too long, error
