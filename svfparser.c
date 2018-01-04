@@ -75,7 +75,6 @@ enum cmd_detection_states
   CD_ERROR, // command not found or not matching (syntax error)
 };
 
-
 // TAP states enumerated/tokenized
 enum libxsvf_tap_state 
 {
@@ -122,6 +121,30 @@ char *Tap_states[] =
   [LIBXSVF_TAP_IRUPDATE] = "IRUPDATE"
 };
 
+// common states for HDR,HIR,SDR,SIR,TDR,TIR
+enum bit_sequence_parsing_states
+{
+  BSPS_INIT = 0,
+  BSPS_LENGTH, // taking the length of the bits array
+  BSPS_NAME1, // first char of name
+  BSPS_NAMECONT, // continue taking char for the name
+  BSPS_VALUEOPEN, // open parenthesis
+  BSPS_VALUE1, // first char of value
+  BSPS_VALUECONT, // continue taking bits array data
+  BSPS_VALUECLOSE, // close parenthesis
+  BSPS_COMPLETE,
+  BSPS_ERROR
+};
+
+enum bit_sequence_field
+{
+  BSF_TDI = 0,
+  BSF_TDO,
+  BSF_MASK,
+  BSF_SMASK
+};
+
+
 /* ******************* BEGIN COMMAND SERVICE FUNCTIONS ******************* */
 /*
 input: '!' - resets global parser state
@@ -132,16 +155,150 @@ return value:
       <0 - error
 */
 
-int cmd_pio(char c)
+int8_t cmd_pio(char c)
 {
   puts("PIO NOT SUPPORTED");
   return 0;
 }
 
+// bit sequence struct common for
+// HDR,HIR,SDR,SIR,TDR,TIR
+struct S_bitseq
+{
+  uint32_t length;
+  uint8_t *data;
+};
+
+// parsed bit sequence is global state
+// bitbanger needs to access them all
+struct S_bitseq BS_hdr, BS_hir, BS_sdr, BS_sir, BS_tdr, BS_tir;
+
+enum bitfield_name_max_len
+{
+  BF_NAME_MAXLEN = 20
+};
+
+// common parser for
+// HDR,HIR,SDR,SIR,TDR,TIR
+int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
+{
+  static int8_t state = BSPS_INIT;
+  static int bfnamelen = 0;
+  static char name[BF_NAME_MAXLEN];
+  if(c == '\0')
+  { // reset parsing state
+    state = 0;
+    bfnamelen = 0;
+    return 0;
+  }
+  if(c == '!')
+  { // complete reset, forgets everything
+    state = 0;
+    bfnamelen = 0;
+    seq->length = 0;
+    return 0;
+  }
+  switch(state)
+  {
+    case BSPS_INIT:
+      if(c == ';')
+      {
+        state = BSPS_ERROR;
+        break;
+      }
+      // look for first char of the length
+      if(c >= '0' && c <= '9')
+      {
+        // take first digit
+        seq->length = c - '0';
+        state = BSPS_LENGTH;
+      }
+      break;
+    case BSPS_LENGTH:
+      if(c == ';')
+      {
+        if(seq->length == 0)
+        {
+          printf("L%d", seq->length);
+          state = BSPS_COMPLETE;
+        }
+        else
+          state = BSPS_ERROR;
+        break;          
+      }
+      if(c == ' ')
+      { // space - end of length, proceed getting the name
+        state = BSPS_NAME1;
+        printf("L%d", seq->length);
+        break;
+      }
+      // take length decimal value digit by digit
+      if(c >= '0' && c <= '9')
+      {
+        // take another digit
+        seq->length = (seq->length * 10) + c - '0';
+        break;
+      }
+      break;
+    case BSPS_NAME1:
+      if(c >= 'A' && c <= 'Z')
+      {
+        state = BSPS_NAMECONT;
+        break;
+      }
+      break;
+    case BSPS_NAMECONT:
+      if(c = ' ')
+      {
+        state = BSPS_VALUEOPEN;
+        break;
+      }
+      if(c >= 'A' && c <= 'Z')
+      {
+        break;
+      }
+      break;
+    default:
+      state = BSPS_ERROR;
+      break;
+  }
+  printf("*");
+}
+
+int8_t cmd_hdr(char c)
+{
+  return cmd_bitsequence(c, &BS_hdr);
+}
+
+int8_t cmd_hir(char c)
+{
+  return cmd_bitsequence(c, &BS_hir);
+}
+
+int8_t cmd_sdr(char c)
+{
+  return cmd_bitsequence(c, &BS_sdr);
+}
+
+int8_t cmd_sir(char c)
+{
+  return cmd_bitsequence(c, &BS_sir);
+}
+
+int8_t cmd_tdr(char c)
+{
+  return cmd_bitsequence(c, &BS_tdr);
+}
+
+int8_t cmd_tir(char c)
+{
+  return cmd_bitsequence(c, &BS_tir);
+}
+
 // struct to command service functions
 struct S_cmd_service
 {
-  int (*service)(char);
+  int8_t (*service)(char);
 };
 
 struct S_cmd_service Cmd_service[] =
@@ -149,16 +306,16 @@ struct S_cmd_service Cmd_service[] =
   [CMD_ENDDR] = { NULL },
   [CMD_ENDIR] = { NULL },
   [CMD_FREQUENCY] = { NULL },
-  [CMD_HDR] = { NULL },
-  [CMD_HIR] = { NULL },
+  [CMD_HDR] = { cmd_hdr },
+  [CMD_HIR] = { cmd_hir },
   [CMD_PIO] = { cmd_pio },
   [CMD_PIOMAP] = { NULL },
   [CMD_RUNTEST] = { NULL },
-  [CMD_SDR] = { NULL },
-  [CMD_SIR] = { NULL },
+  [CMD_SDR] = { cmd_sdr },
+  [CMD_SIR] = { cmd_sir },
   [CMD_STATE] = { NULL },
-  [CMD_TDR] = { NULL },
-  [CMD_TIR] = { NULL },
+  [CMD_TDR] = { cmd_tdr },
+  [CMD_TIR] = { cmd_tir },
   [CMD_TRST] = { NULL },
 };
 /* ******************* END COMMAND SERVICE FUNCTIONS ******************* */
@@ -191,6 +348,7 @@ int8_t commandstate(char c)
   static char cmdbuf[CMDS_MAX_CHARS+1];  // buffer command chars + null
   static int8_t command = -1; // detected command
   static uint8_t cdstate = CD_INIT; // first few chars of command detection state
+  static int8_t cxstate = -1; // command execution state
   
   if(c == '\0')
   {
@@ -209,6 +367,7 @@ int8_t commandstate(char c)
             cmdbuf[0] = c;
             cmdindex = 1;
             command = -1;
+            cxstate = -1;
             cdstate = CD_START;
           }
           return 0;
@@ -224,6 +383,9 @@ int8_t commandstate(char c)
             else
             {
               printf("<found %s>", Commands[command]);
+              // reset parser state of the command service function
+              if(Cmd_service[command].service)
+                Cmd_service[command].service('\0');
               cdstate = CD_EXEC;
             }
             break;
@@ -236,13 +398,20 @@ int8_t commandstate(char c)
           }
           break;
         case CD_EXEC:
-          // executing -- switch various commands
+          // executing
+          // semicolon to end command
           if(c == ';')
           {
             cdstate = CD_INIT;
-            commandstate('\0');
             return 1; // command complete
           }
+          // sanity check
+          if(command < 0 || command >= CMD_NUM)
+            return -2; // strange, this should never happen
+          if(Cmd_service[command].service == NULL)
+            return 0; // no command service function
+          // executing -- call selected command service function
+          cxstate = Cmd_service[command].service(c);
           break;
         case CD_ERROR:
           // error
