@@ -180,6 +180,11 @@ int8_t search_name(char *cmd, char *list[])
 
 
 // '\0' char will reset command state (new line)
+/*
+return -1 command incomplete
+        0 neutral (spaces, not in command)
+        1 command complete
+*/
 int8_t commandstate(char c)
 {
   static uint32_t cmdindex = 0;
@@ -206,6 +211,7 @@ int8_t commandstate(char c)
             command = -1;
             cdstate = CD_START;
           }
+          return 0;
           break;
         case CD_START:
           if(c == ' ')
@@ -232,13 +238,18 @@ int8_t commandstate(char c)
         case CD_EXEC:
           // executing -- switch various commands
           if(c == ';')
+          {
             cdstate = CD_INIT;
+            commandstate('\0');
+            return 1; // command complete
+          }
           break;
         case CD_ERROR:
           // error
           return -1;
           break;
-  }  
+  }
+  return -1; // command incomplete
 }
 
 // index = position in the stream (0 resets FSM)
@@ -255,7 +266,7 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
   static uint8_t lstate = LS_SPACE;
   static uint32_t line_count = 0;
   static uint8_t lbracket = 0;
-  static uint8_t cmderr = 0;
+  static int8_t cmderr = 0;
   if(index == 0)
   {
     lstate = LS_SPACE;
@@ -332,10 +343,14 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
       // multiple spaces are filtered out
       printf("%c", c);
       cmderr = commandstate(c);      
+  if(cmderr > 0)
+    printf("command complete\n");
     }
   }
-  if(cmderr)
+  if(cmderr < 0)
     printf("command incomplete\n");
+  if(cmderr > 0)
+    printf("command complete\n");
   printf("line count %d\n", line_count);
   return 0;
 } 
