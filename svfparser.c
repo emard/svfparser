@@ -57,6 +57,7 @@ char *Commands[] =
   [CMD_TDR] = "TDR",
   [CMD_TIR] = "TIR",
   [CMD_TRST] = "TRST",
+  [CMD_NUM] = NULL
 };
 
 // quick search: first 4 chars of command are enough 
@@ -121,21 +122,64 @@ char *Tap_states[] =
   [LIBXSVF_TAP_IRUPDATE] = "IRUPDATE"
 };
 
+/* ******************* BEGIN COMMAND SERVICE FUNCTIONS ******************* */
+/*
+input: '!' - resets global parser state
+       '\0' - resets line parser state
+       letter - incoming char by char
+return value:
+       0 - ok
+      <0 - error
+*/
+
+int cmd_pio(char c)
+{
+  puts("PIO NOT SUPPORTED");
+  return 0;
+}
+
+// struct to command service functions
+struct S_cmd_service
+{
+  int (*service)(char);
+};
+
+struct S_cmd_service Cmd_service[] =
+{
+  [CMD_ENDDR] = { NULL },
+  [CMD_ENDIR] = { NULL },
+  [CMD_FREQUENCY] = { NULL },
+  [CMD_HDR] = { NULL },
+  [CMD_HIR] = { NULL },
+  [CMD_PIO] = { cmd_pio },
+  [CMD_PIOMAP] = { NULL },
+  [CMD_RUNTEST] = { NULL },
+  [CMD_SDR] = { NULL },
+  [CMD_SIR] = { NULL },
+  [CMD_STATE] = { NULL },
+  [CMD_TDR] = { NULL },
+  [CMD_TIR] = { NULL },
+  [CMD_TRST] = { NULL },
+};
+/* ******************* END COMMAND SERVICE FUNCTIONS ******************* */
+
+
 // search command
 // >= 0 : tokenized command
 // < 0 : command not found
-int8_t search_cmd(char *cmd)
+// list is array of strings, null pointer terminated
+int8_t search_name(char *cmd, char *list[])
 {
   // printf("<SEARCH %s>", cmd);
   int i;
-  for(i = 0; i < CMD_NUM; i++)
-    if(strcmp(cmd, Commands[i]) == 0)
+  for(i = 0; list[i] != NULL; i++)
+    if(strcmp(cmd, list[i]) == 0)
       return i;
   return -1;
 }
 
 
-// '\0' char will reset command state
+// '\0' char will reset command state (new line)
 int8_t commandstate(char c)
 {
   static uint32_t cmdindex = 0;
@@ -167,8 +211,8 @@ int8_t commandstate(char c)
           if(c == ' ')
           {
             // space found, search for the buffered command
-            cmdbuf[cmdindex] = '\0'; // 0-terminate
-            command = search_cmd(cmdbuf);
+            cmdbuf[cmdindex] = '\0'; // 0-terminate string
+            command = search_name(cmdbuf, Commands);
             if(command < 0)
               cdstate = CD_ERROR;
             else
@@ -194,9 +238,7 @@ int8_t commandstate(char c)
           // error
           return -1;
           break;
-  }
-
-  
+  }  
 }
 
 // index = position in the stream (0 resets FSM)
@@ -293,7 +335,7 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
     }
   }
   if(cmderr)
-    printf("command error\n");
+    printf("command incomplete\n");
   printf("line count %d\n", line_count);
   return 0;
 } 
