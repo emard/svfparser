@@ -9,7 +9,7 @@ This is unfinished.
 
 # TODO
 
-[ ] fill binary data ready for bitbanging
-[ ] implement bitbanging
-[ ] output to xsvf
-[ ] output splitted commands
+    [ ] fill binary data ready for bitbanging
+    [ ] implement bitbanging
+    [ ] output to xsvf
+    [ ] output splitted commands
