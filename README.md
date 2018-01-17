@@ -5,3 +5,4 @@ requirements (microcontroller friendly). Data stream is coming
 from the network in packets. Each packet is passed to the parser
 which retains internal state and bitbangs data to JTAG.
 
+This is unfinished.
