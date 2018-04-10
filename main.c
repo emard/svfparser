@@ -22,9 +22,9 @@ int packetize(char *filename, size_t size)
     int final = packet_len < size ? 1 : 0;
     parse_svf_packet(packet_data, index, packet_len, final);
     index += packet_len;
-    printf("packet len %d\n", packet_len);
+    printf("packet len %ld\n", packet_len);
   }
-  printf("total len %d\n", index);
+  printf("total len %ld\n", index);
   free(packet_data);
   return 0;
 }

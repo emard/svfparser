@@ -6,7 +6,17 @@
 
 // max bytes allowed to allocate per bitfield
 // HDR,HIR,TDR,TIR each may need 0-4 bitfields
-// SDR,SIR need 1 buffer, they output data
+// SDR,SIR by the standard should be remembered
+// the same way as HDR is rememberd but here we
+// used on-the-fly, buffering only output data,
+// xor-ing them with TDO and masking them on-the-fly
+// it can work if bitfields come in this order:
+// TDI,TDO,MASK. SMASK must be ignored.
+
+// 1-direct on-the-fly mode: minimal SDR/SIR buffering
+// 0-standard mode
+uint8_t direct_mode = 1; 
+
 // immediately, buffer can be alloced at invocation of
 // TDI, even shorter than neccessary. In this buffer
 // TDO response is stored until the buffer is full
@@ -14,6 +24,8 @@
 // Response (even partial) can be optionally used later
 // for masking and verification
 const int MAX_alloc = 30000;
+
+
 
 // lowest level lexical parser states
 // to eliminate comments and whitespaces
@@ -221,6 +233,9 @@ struct S_bitseq
   uint8_t *field[BSF_NUM]; // *tdo, *tdi, *mask, *smask;
 };
 
+// leading zeroes are assumed for a field
+// if not exactly specified
+
 // parsed bit sequence is global state
 // bitbanger needs to access them all
 // initialize all as NULL pointers (unallocated space)
@@ -392,7 +407,6 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
         uint8_t hexdigit = c < 'A' ? c - '0' : c + 10 - 'A';
         // todo: 8-bit buffering
         // work here with complete bytes
-
         if(seq->direct > 0)
         {
           // apply direct bitbanging now
