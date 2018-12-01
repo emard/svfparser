@@ -84,6 +84,8 @@ char *Commands[] =
   [CMD_NUM] = NULL
 };
 
+int Completed_command = CMD_NUM; // completed command
+
 // quick search: first 4 chars of command are enough 
 #define CMDS_ENOUGH_CHARS 4
 // maximal command length (buffering)
@@ -228,7 +230,7 @@ int8_t cmd_pio(char c)
 struct S_bitseq
 {
   uint32_t length;
-  uint8_t direct; // direct execute I/O activity during parsing
+  int32_t digitindex[BSF_NUM]; // insertion digit (nibble) index running from 2*allocated-1 downto 0. -1 if no space left.
   uint32_t allocated[BSF_NUM]; // how many bytes are allocated in field[]
   uint8_t *field[BSF_NUM]; // *tdo, *tdi, *mask, *smask;
 };
@@ -241,18 +243,50 @@ struct S_bitseq
 // initialize all as NULL pointers (unallocated space)
 // reallocating them as needed
 // 1 for direct I/O (no allocation, no buffering)
-struct S_bitseq BS_hdr = { 0, 0, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
-struct S_bitseq BS_hir = { 0, 0, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
-struct S_bitseq BS_sdr = { 0, 1, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
-struct S_bitseq BS_sir = { 0, 1, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
-struct S_bitseq BS_tdr = { 0, 0, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
-struct S_bitseq BS_tir = { 0, 0, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
+struct S_bitseq BS_hdr = { 0, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
+struct S_bitseq BS_hir = { 0, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
+struct S_bitseq BS_sdr = { 0, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
+struct S_bitseq BS_sir = { 0, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
+struct S_bitseq BS_tdr = { 0, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
+struct S_bitseq BS_tir = { 0, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
 
 // bitfield name "SMASK" is longest: 5 chars
 enum bitfield_name_max_len
 {
   BF_NAME_MAXLEN = 5
 };
+
+void print_bitsequence(struct S_bitseq *seq)
+{
+  int i, j;
+  printf("length %d bit\n", seq->length);
+  for(i = 0; i < BSF_NUM; i++)
+  {
+    int digitlen = 2*seq->allocated[i]-1 - seq->digitindex[i];
+    int bytelen = (digitlen+1)/2;
+    int firstbyte = seq->digitindex[i]/2;
+    uint8_t *mem = seq->field[i] + firstbyte;
+    printf("field %s (%d digits)\n", bsf_name[i], digitlen);
+    for(j = 0; j < bytelen; j++)
+      printf("%02X", mem[j]);
+    printf("\n");
+  }
+}
+
+void print_buffer()
+{
+  if(Completed_command == CMD_SIR)
+  {
+    printf("SIR buffer:\n");
+    print_bitsequence(&BS_sir);
+  }
+  if(Completed_command == CMD_SDR)
+  {
+    printf("SDR buffer:\n");
+    print_bitsequence(&BS_sdr);
+  }
+}
+
 
 // common parser for
 // HDR,HIR,SDR,SIR,TDR,TIR
@@ -262,13 +296,15 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
   static int bfnamelen = 0;
   static char bfname[BF_NAME_MAXLEN+1];
   static uint8_t tbfname = -1; // tokenized bitfield name
-  static int32_t digitindex = 0; // count hex digits of the bitfield
+  static int32_t digitindex = -1; // countdown hex digits of the bitfield
   if(c == '\0')
   { // reset parsing state
     state = 0;
     bfnamelen = 0;
     tbfname = -1;
-    digitindex = 0;
+    digitindex = -1;
+    for(int i = 0; i < BSF_NUM; i++)
+      seq->digitindex[i] = seq->allocated[i]*2-1;
     return 0;
   }
   if(c == '!')
@@ -276,7 +312,9 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
     state = 0;
     bfnamelen = 0;
     tbfname = -1;
-    digitindex = 0;
+    digitindex = -1;
+    for(int i = 0; i < BSF_NUM; i++)
+      seq->digitindex[i] = seq->allocated[i]*2-1;
     seq->length = 0;
     return 0;
   }
@@ -359,16 +397,11 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
           state = BSPS_ERROR;
           break;        
         }
-        digitindex = 0;
+        digitindex = (seq->length+3)/4-1; // start inserting at highest position downwards
         printf("open");
         state = BSPS_VALUE;
-        // for bitsequence SDR,SIR (direct)
-        // only bitfield "TDI" will be allocated
-        // (memory saving with direct bitbanging)
         // it is allowed to allocate less than required length
         // just issue some warnings
-        if(seq->direct > 0 && tbfname != BSF_TDI)
-          break; // skip the rest of memory allocation
         // realloc to length now
         // calculate bytes needed to allocate
         uint32_t alloc_bytes = (seq->length+7)/8;
@@ -379,7 +412,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
             alloc_bytes, MAX_alloc);
           alloc_bytes = MAX_alloc;
         }
-        // realloc now only bitfield "TDI" of bitsequence SDR,SIR
+        // realloc now the bitfield
         seq->field[tbfname] = realloc(seq->field[tbfname], alloc_bytes);
         if(seq->field[tbfname] == NULL)
         {
@@ -388,6 +421,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
           break;
         }
         seq->allocated[tbfname] = alloc_bytes; // track how much is allocated
+        seq->digitindex[tbfname] = digitindex; // insertion point start from highest byte
       }
       else
         state = BSPS_ERROR;
@@ -407,24 +441,25 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
         uint8_t hexdigit = c < 'A' ? c - '0' : c + 10 - 'A';
         // todo: 8-bit buffering
         // work here with complete bytes
-        if(seq->direct > 0)
-        {
-          // apply direct bitbanging now
-          printf("=");
-        }
-        else
+        if( digitindex >= 0 )
         {
           // buffer the data for later use
           // don't exceed the allocated length
           uint32_t byteindex = digitindex/2;
           if( byteindex < seq->allocated[tbfname] )
           {
-            uint8_t value_byte = seq->field[tbfname][byteindex];
-            value_byte = (value_byte << 8) | hexdigit;
+            uint8_t value_byte;
+            // printf("add digit #%d %s %X\n", digitindex, bsf_name[tbfname], hexdigit);
+            if( (digitindex & 1) != 0 )
+              value_byte = hexdigit << 4;
+            else
+              value_byte = seq->field[tbfname][byteindex] | hexdigit;
             seq->field[tbfname][byteindex] = value_byte;
+            seq->digitindex[tbfname] = --digitindex;
           }
         }
-        digitindex++;
+        else
+          printf("********** OVERRUN %d **********\n", digitindex);
         break;
       }
       if(c == ')')
@@ -537,7 +572,7 @@ int8_t commandstate(char c)
   static int8_t command = -1; // detected command
   static uint8_t cdstate = CD_INIT; // first few chars of command detection state
   static int8_t cxstate = -1; // command execution state
-  
+
   if(c == '\0')
   {
     cmdindex = 0;
@@ -555,6 +590,7 @@ int8_t commandstate(char c)
             cmdbuf[0] = c;
             cmdindex = 1;
             command = -1;
+            Completed_command = CMD_NUM;
             cxstate = -1;
             cdstate = CD_START;
           }
@@ -571,6 +607,7 @@ int8_t commandstate(char c)
             else
             {
               printf("<found %s>", Commands[command]);
+              // TODO reset previous buffered content
               // reset parser state of the command service function
               if(Cmd_service[command].service)
                 Cmd_service[command].service('\0');
@@ -597,6 +634,7 @@ int8_t commandstate(char c)
           if(c == ';')
           {
             cdstate = CD_INIT;
+            Completed_command = command;
             return 1; // command complete
           }
           break;
@@ -692,15 +730,17 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
         lstate = LS_TEXT;
         break;
     }
-
     if(lstate == LS_TEXT)
     {
       // only active text appears here. comments and 
       // multiple spaces are filtered out
       printf("%c", c);
       cmderr = commandstate(c);      
-  if(cmderr > 0)
-    printf("command complete\n");
+      if(cmderr > 0)
+      {
+        printf("command %s complete\n", Commands[Completed_command]);
+        print_buffer();
+      }
     }
   }
   if(cmderr < 0)
