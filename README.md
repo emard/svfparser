@@ -10,7 +10,8 @@ bitbangs data to JTAG and frees RAM for new data.
 
 # TODO
 
-    [ ] fill binary data ready for bitbanging
+    [x] fill binary data ready for bitbanging
+    [ ] support incomplete byte lengths 
     [ ] implement bitbanging
     [ ] output to xsvf
     [ ] output splitted commands
