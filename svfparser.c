@@ -179,8 +179,8 @@ enum bit_sequence_parsing_states
 
 enum bit_sequence_field
 {
-  BSF_TDI = 0,
-  BSF_TDO,
+  BSF_TDO = 0,
+  BSF_TDI,
   BSF_MASK,
   BSF_SMASK,
   BSF_NUM
@@ -188,8 +188,8 @@ enum bit_sequence_field
 
 char *bsf_name[] =
 {
-  [BSF_TDI] = "TDI",
   [BSF_TDO] = "TDO",
+  [BSF_TDI] = "TDI",
   [BSF_MASK] = "MASK",
   [BSF_SMASK] = "SMASK",
   [BSF_NUM] = NULL
@@ -303,8 +303,9 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
     bfnamelen = 0;
     tbfname = -1;
     digitindex = -1;
-    for(int i = 0; i < BSF_NUM; i++)
-      seq->digitindex[i] = seq->allocated[i]*2-1;
+    // TDI, MASK, SMASK are sticky and remembered from previous SVF command
+    // TDO is not remembered between SVF commands
+    seq->digitindex[BSF_TDO] = seq->allocated[BSF_TDO]*2-1;
     return 0;
   }
   if(c == '!')
