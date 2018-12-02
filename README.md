@@ -8,6 +8,8 @@ Data stream is coming from the network or SD card in packets (blocks).
 Each packet is passed to the parser which keeps internal state and
 bitbangs data to JTAG and frees RAM for new data.
 
+[SVF Format spec](http://www.jtagtest.com/pdf/svf_specification.pdf)
+
 # TODO
 
     [x] fill binary data ready for bitbanging
