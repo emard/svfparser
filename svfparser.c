@@ -230,6 +230,7 @@ int8_t cmd_pio(char c)
 struct S_bitseq
 {
   uint32_t length;
+  uint32_t length_prev[BSF_NUM]; // lengths of each bitfield of previous SVF command
   int32_t digitindex[BSF_NUM]; // insertion digit (nibble) index running from 2*allocated-1 downto 0. -1 if no space left.
   uint32_t allocated[BSF_NUM]; // how many bytes are allocated in field[]
   uint8_t *field[BSF_NUM]; // *tdo, *tdi, *mask, *smask;
@@ -243,12 +244,12 @@ struct S_bitseq
 // initialize all as NULL pointers (unallocated space)
 // reallocating them as needed
 // 1 for direct I/O (no allocation, no buffering)
-struct S_bitseq BS_hdr = { 0, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
-struct S_bitseq BS_hir = { 0, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
-struct S_bitseq BS_sdr = { 0, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
-struct S_bitseq BS_sir = { 0, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
-struct S_bitseq BS_tdr = { 0, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
-struct S_bitseq BS_tir = { 0, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
+struct S_bitseq BS_hdr = { 0, {0,0,0,0}, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
+struct S_bitseq BS_hir = { 0, {0,0,0,0}, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
+struct S_bitseq BS_sdr = { 0, {0,0,0,0}, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
+struct S_bitseq BS_sir = { 0, {0,0,0,0}, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
+struct S_bitseq BS_tdr = { 0, {0,0,0,0}, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
+struct S_bitseq BS_tir = { 0, {0,0,0,0}, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
 
 // bitfield name "SMASK" is longest: 5 chars
 enum bitfield_name_max_len
@@ -423,6 +424,14 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
         }
         seq->allocated[tbfname] = alloc_bytes; // track how much is allocated
         seq->digitindex[tbfname] = digitindex; // insertion point start from highest byte
+        // when length has changed then reset bit field to its default value
+        if(seq->length_prev[tbfname] != seq->length)
+        {
+          // when length changes, default MASK and SMASK is set to all cares 0xFF
+          if(tbfname == BSF_MASK || tbfname == BSF_SMASK)
+            memset(seq->field[tbfname], 0xFF, seq->allocated[tbfname]);
+        }
+        seq->length_prev[tbfname] = seq->length;
       }
       else
         state = BSPS_ERROR;
@@ -452,7 +461,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
             uint8_t value_byte;
             // printf("add digit #%d %s %X\n", digitindex, bsf_name[tbfname], hexdigit);
             if( (digitindex & 1) != 0 )
-              value_byte = hexdigit << 4;
+              value_byte = hexdigit << 4; // with 4 bit leading zeros
             else
               value_byte = seq->field[tbfname][byteindex] | hexdigit;
             seq->field[tbfname][byteindex] = value_byte;
@@ -465,7 +474,18 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
       }
       if(c == ')')
       {
-        // todo: bitbang or store incomplete byte buffered above
+        // write leading zeros for unspecified hex digits
+        if( digitindex >= 0 )
+        {
+          uint32_t byteindex = digitindex/2;
+          if( byteindex < seq->allocated[tbfname] )
+          {
+            int i;
+            for(i = 0; i <= byteindex; i++)
+              seq->field[tbfname][i] = 0; // leading zeros
+          }
+          seq->digitindex[tbfname] = -1;
+        }
         printf("close");
         bfname[0] = '\0';
         bfnamelen = 0;
