@@ -474,6 +474,8 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
       }
       if(c == ')')
       {
+        #if 0
+        // disabled - let's do it at output
         // write leading zeros for unspecified hex digits
         if( digitindex >= 0 )
         {
@@ -486,6 +488,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
           }
           seq->digitindex[tbfname] = -1;
         }
+        #endif
         printf("close");
         bfname[0] = '\0';
         bfnamelen = 0;
