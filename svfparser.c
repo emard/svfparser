@@ -259,17 +259,42 @@ enum bitfield_name_max_len
 
 void print_bitsequence(struct S_bitseq *seq)
 {
+  // print what would be bitbanged
   int i, j;
   printf("length %d bit\n", seq->length);
+  int tdo_digitlen = (seq->length+3)/4-1 - seq->digitindex[BSF_TDO];
   for(i = 0; i < BSF_NUM; i++)
   {
-    int digitlen = 2*seq->allocated[i]-1 - seq->digitindex[i];
+    if(seq->allocated[i] == 0 || seq->field[i] == NULL)
+      continue; // not allocated
+    int digitlen = (seq->length+3)/4-1 - seq->digitindex[i];
+    printf("seq->length = %d, seq->digitindex = %d\n", seq->length, seq->digitindex[i]);
     int bytelen = (digitlen+1)/2;
-    int firstbyte = seq->digitindex[i]/2;
+    int bits_remaining = seq->length - 8 * bytelen;
+    // int complete_bytes = bits_remaining ? bytelen - 1 : bytelen;
+    int complete_bytes = bytelen;
+    int firstbyte = (seq->digitindex[i]+1)/2;
+    printf("reading from %d\n", firstbyte);
     uint8_t *mem = seq->field[i] + firstbyte;
     printf("field %s (%d digits)\n", bsf_name[i], digitlen);
-    for(j = 0; j < bytelen; j++)
-      printf("%02X", mem[j]);
+    if( (digitlen > 0 && i != BSF_MASK)
+    ||  (digitlen > 0 && i == BSF_MASK && tdo_digitlen > 0)
+    )
+    {
+      if(complete_bytes > 0)
+      {
+        printf("0x");
+        for(j = 0; j < complete_bytes; j++)
+          printf("%02X", mem[j]);
+      }
+      if(bits_remaining > 0)
+      {
+        uint8_t byte_remaining = mem[complete_bytes];
+        printf(" 0b");
+        for(j = 0; j < bits_remaining; j++, byte_remaining >>= 1)
+          printf("%d", byte_remaining & 1);
+      }
+    }
     printf("\n");
   }
 }
@@ -303,7 +328,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
     state = 0;
     bfnamelen = 0;
     tbfname = -1;
-    digitindex = -1;
+    digitindex = 0;
     // TDI, MASK, SMASK are sticky and remembered from previous SVF command
     // TDO is not remembered between SVF commands
     seq->digitindex[BSF_TDO] = seq->allocated[BSF_TDO]*2-1;
@@ -314,9 +339,9 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
     state = 0;
     bfnamelen = 0;
     tbfname = -1;
-    digitindex = -1;
+    digitindex = 0;
     for(int i = 0; i < BSF_NUM; i++)
-      seq->digitindex[i] = seq->allocated[i]*2-1;
+      seq->digitindex[i] = 0;
     seq->length = 0;
     return 0;
   }
@@ -351,6 +376,13 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
         bfnamelen = 0;
         tbfname = -1;
         state = BSPS_NAME;
+        // if length has changed, then reset remembered fields
+        for(int i = 0; i < BSF_NUM; i++)
+          if(seq->length_prev[i] != seq->length)
+          {
+            // printf("reset length");
+            seq->digitindex[i] = (seq->length+3)/4-1;
+          }
         break;
       }
       if(c == ';')
@@ -465,6 +497,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
             else
               value_byte = seq->field[tbfname][byteindex] | hexdigit;
             seq->field[tbfname][byteindex] = value_byte;
+            // printf("written %s to %d\n", bsf_name[tbfname] , byteindex);
             seq->digitindex[tbfname] = --digitindex;
           }
         }
