@@ -260,6 +260,10 @@ enum bitfield_name_max_len
 void print_bitsequence(struct S_bitseq *seq)
 {
   // print what would be bitbanged
+  // if byte incomplete, print first 4 data bits
+  // print complete data bytes
+  // print last 0-7 data bits and trailing 0-bits
+  // print trailing 0-bytes
   int i, j;
   printf("length %d bit\n", seq->length);
   int tdo_digitlen = (seq->length+3)/4-1 - seq->digitindex[BSF_TDO];
@@ -275,20 +279,31 @@ void print_bitsequence(struct S_bitseq *seq)
     int complete_bytes = bytelen;
     int firstbyte = (seq->digitindex[i]+1)/2;
     printf("reading from %d\n", firstbyte);
-    uint8_t *mem = seq->field[i] + firstbyte;
     printf("field %s (%d digits)\n", bsf_name[i], digitlen);
     if( (digitlen > 0 && i != BSF_MASK)
     ||  (digitlen > 0 && i == BSF_MASK && tdo_digitlen > 0)
     )
     {
+      printf("0x");
+      uint8_t *mem = seq->field[i] + firstbyte;
+      int bstart = 0;
+      if( (bits_remaining & 7) >= 1 && (bits_remaining & 7) <= 4)
+      {
+        // nibble
+        printf("%01X", mem[0] >> 4);
+        bstart = 1;
+      }
       if(complete_bytes > 0)
       {
-        printf("0x");
-        for(j = 0; j < complete_bytes; j++)
-          printf("%02X", mem[j]);
+        for(j = bstart; j < complete_bytes; j++)
+          printf("%01X%01X", mem[j] & 0xF, mem[j] >> 4);
+      }
+      if(bstart != 0)
+      { // niblle
+        printf("%01X", mem[j] & 0xF);
       }
       if(bits_remaining > 0)
-      {
+      { // FIXME: incorrectly fetches remaining bits
         uint8_t byte_remaining = mem[complete_bytes];
         printf(" 0b");
         for(j = 0; j < bits_remaining; j++, byte_remaining >>= 1)
