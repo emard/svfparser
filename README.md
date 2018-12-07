@@ -17,3 +17,4 @@ bitbangs data to JTAG and frees RAM for new data.
     [ ] implement bitbanging
     [ ] output to xsvf
     [ ] output splitted commands
+    [ ] overrun not reported: 29 bit length, 31 bit content

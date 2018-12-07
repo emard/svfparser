@@ -306,8 +306,8 @@ void print_bitsequence(struct S_bitseq *seq)
       { // FIXME: incorrectly fetches remaining bits
         uint8_t byte_remaining = mem[complete_bytes];
         printf(" 0b");
-        for(j = 0; j < bits_remaining; j++, byte_remaining >>= 1)
-          printf("%d", byte_remaining & 1);
+        for(j = 0; j < bits_remaining; j++, byte_remaining <<= 1)
+          printf("%d", byte_remaining >> 7);
       }
     }
     printf("\n");
