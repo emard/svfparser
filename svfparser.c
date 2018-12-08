@@ -249,6 +249,16 @@ out for TDO and MASK data.
 
 in SPI interface, MSB (most significant bit of a byte) is shifted first.
 
+we need to determine:
+uint8_t n_first_nibble; // 1/0 yes/no output first nibble
+uint8_t *first_nibble; // ptr to byte having first nibble
+uint32_t n_complete_bytes; // number of complete bytes
+uint8_t *complete_bytes; // pointer to first complete byte
+uint8_t n_last_bits; // 1/0 yes/no output last nibble
+uint8_t *last_bits; // ptr to byte having last bits, should be padded
+uint32_t n_pad_bytes; // number of pad bytes
+uint8_t pad_byte; // pad byte value
+
 svf length: 47
 svf digits: 1234567
 bytes stored:
@@ -257,8 +267,8 @@ bytes stored:
 output data
 0x7 (4-bit) first 4-bits, hex digit 7
 0x56 0x34 0x12 (3 bytes, 24-bit) complete bytes
-0x00 0x00 (2 bytes, 16-bit) complete bytes 0-padding
 0b000 (3 bits, 0-padding)
+0x00 0x00 (2 bytes, 16-bit) complete bytes 0-padding
 
 svf length: 47
 svf digits: 12345678
@@ -267,8 +277,8 @@ bytes stored:
 
 output data
 0x78 0x56 0x34 0x12 (3 bytes, 24-bit) complete bytes
-0x00 0x00 (2 bytes, 16-bit) complete bytes 0-padding
 0b000 (3 bits, 0-padding)
+0x00 0x00 (2 bytes, 16-bit) complete bytes 0-padding
 
 
 svf length: 26
@@ -318,49 +328,81 @@ void print_bitsequence(struct S_bitseq *seq)
   {
     if(seq->allocated[i] == 0 || seq->field[i] == NULL)
       continue; // not allocated
+
+    printf("seq->length = %d, seq->digitindex = %d\n", seq->length, seq->digitindex[i]);
+    // from seq->length and seq->digitindex we calculate following:
+
     //int max_full_digits = seq->length/4;
     int digitlen = (seq->length+3)/4-1 - seq->digitindex[i];
-    //if(digitlen > max_full_digits)
-    //  digitlen = max_full_digits;
-    printf("seq->length = %d, seq->digitindex = %d\n", seq->length, seq->digitindex[i]);
-    for(j = 0; j < seq->allocated[i]; j++)
-      printf("%01X%01X ", ReverseNibble[seq->field[i][j] >> 4], ReverseNibble[seq->field[i][j] & 0xF]);
-    printf("\n");
     int bytelen = (digitlen+1)/2;
     int bits_remaining = seq->length - 8 * bytelen;
+    int firstbyte = (seq->digitindex[i]+1)/2;
+    uint8_t *mem = seq->field[i] + firstbyte;
+    int memlen = seq->allocated[i] - firstbyte;
+
+    uint8_t n_first_nibble = (bits_remaining & 7) >= 1 && (bits_remaining & 7) <= 4 ? 1 : 0; // 1/0 yes/no output first nibble
+    uint8_t *first_nibble = mem; // ptr to byte having first nibble
+    int n_complete_bytes = bytelen; // number of complete bytes
+    uint8_t *ptr_complete_bytes = &(mem[n_first_nibble]); // pointer to first complete byte
+    uint8_t n_last_bits; // 1/0 yes/no output last nibble
+    uint8_t *last_bits; // ptr to byte having last bits, should be padded
+    uint32_t n_pad_bytes; // number of pad bytes
+    uint8_t pad_byte = 0; // pad byte value
+    
+    printf("n_first_nibble=%d\n", n_first_nibble);
+    if(n_first_nibble)
+      printf("first_nibble=%1X\n", ReverseNibble[first_nibble[0] & 0xF]);
+    printf("n_complete_bytes=%d\n", n_complete_bytes);
+    printf("bytelen=%d\n", bytelen);
+    printf("bits_remaining=%d\n", bits_remaining);
+    printf("memlen=%d\n", memlen);
+    for(j = 0; j < memlen; j++)
+      printf("%01X%01X ", ReverseNibble[mem[j] >> 4], ReverseNibble[mem[j] & 0xF]);
+    printf("\n");
     // int complete_bytes = bits_remaining ? bytelen - 1 : bytelen;
     int complete_bytes = bytelen;
-    int firstbyte = (seq->digitindex[i]+1)/2;
     printf("reading from %d\n", firstbyte);
     printf("field %s (%d digits)\n", bsf_name[i], digitlen);
     if( (digitlen > 0 && i != BSF_MASK)
     ||  (digitlen > 0 && i == BSF_MASK && tdo_digitlen > 0)
     )
     {
-      printf("0x");
-      uint8_t *mem = seq->field[i] + firstbyte;
       int bstart = 0;
       if( (bits_remaining & 7) >= 1 && (bits_remaining & 7) <= 4)
       {
         // nibble
-        printf("%01X", ReverseNibble[mem[0] & 0xF]);
+        printf("0x%01X ", ReverseNibble[mem[0] & 0xF]);
         bstart = 1;
       }
       if(complete_bytes > 0)
       {
+        printf("0x");
         for(j = bstart; j < complete_bytes; j++)
           printf("%01X%01X", ReverseNibble[mem[j] >> 4], ReverseNibble[mem[j] & 0xF]);
+        printf(" ");
       }
       if(bstart != 0)
       { // niblle
-        printf("%01X", ReverseNibble[mem[j] >> 4]);
+        printf("0x%01X ", ReverseNibble[mem[j] >> 4]);
       }
       if(bits_remaining > 0)
       { // FIXME: incorrectly fetches remaining bits
-        uint8_t byte_remaining = mem[complete_bytes];
-        printf(" 0b");
-        for(j = 0; j < bits_remaining; j++, byte_remaining <<= 1)
-          printf("%d", byte_remaining >> 7);
+        uint8_t byte_remaining = pad_byte;
+        uint8_t additional_bits = bits_remaining & 7;
+        if(additional_bits > 0)
+        {
+          printf("0b");
+          for(j = 0; j < additional_bits; j++, byte_remaining <<= 1)
+            printf("%d", byte_remaining >> 7);
+          printf(" ");
+        }
+        uint8_t additional_bytes = bits_remaining / 8;
+        if(additional_bytes > 0)
+        {
+          printf("0x");
+          for(j = 0; j < additional_bytes; j++)
+            printf("%1X%1X", pad_byte >> 4, pad_byte & 0xF);
+        }
       }
     }
     printf("\n");
@@ -773,7 +815,7 @@ void init_reversenibble()
 {
   uint8_t i,j,v,r;     // input bits to be reversed
 
-  for (i = 0; i < 15; i++)
+  for (i = 0; i < 16; i++)
   {
     for (v = i, r = 0, j = 0; j < 4; j++)
     {   
@@ -782,6 +824,7 @@ void init_reversenibble()
       v >>= 1;
     }
     ReverseNibble[i] = r;
+    printf("%1X -> %1X\n", i, r);
   }
 }
 
