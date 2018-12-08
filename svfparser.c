@@ -236,6 +236,51 @@ struct S_bitseq
   uint8_t *field[BSF_NUM]; // *tdo, *tdi, *mask, *smask;
 };
 
+/* memory storage plan
+
+[SVF Format spec](http://www.jtagtest.com/pdf/svf_specification.pdf)
+Page 'V' (p.5):
+The bit order for scan data follows the convention that the least
+significant bit (rightmost bit) is the first bit scanned into the
+hardware for TDI and SMASK scan data and is the first bit scanned
+out for TDO and MASK data. 
+
+in SPI interface, MSB (most significant bit of a byte) is shifted first.
+
+svf length: 47
+svf digits: 1234567
+bytes stored:
+ 00 00 70 56 34 12
+
+output data
+0x7 (4-bit) first 4-bits, hex digit 7
+0x56 0x34 0x12 (3 bytes, 24-bit) complete bytes
+0x00 0x00 (2 bytes, 16-bit) complete bytes 0-padding
+0b000 (3 bits, 0-padding)
+
+svf length: 47
+svf digits: 12345678
+bytes stored:
+ 00 00 78 56 34 12
+
+output data
+0x78 0x56 0x34 0x12 (3 bytes, 24-bit) complete bytes
+0x00 0x00 (2 bytes, 16-bit) complete bytes 0-padding
+0b000 (3 bits, 0-padding)
+
+
+svf length: 26
+svf digits: 1234567
+bytes stored:
+ 70 56 34 12
+
+output data
+0x7 hex digit 7
+0x56 0x34 (2 bytes, 16-bit) complete bytes
+0x2 hex digit 2 (4-bits)
+0b10 2-bits hex digit 1
+*/
+
 // leading zeroes are assumed for a field
 // if not exactly specified
 
@@ -271,8 +316,14 @@ void print_bitsequence(struct S_bitseq *seq)
   {
     if(seq->allocated[i] == 0 || seq->field[i] == NULL)
       continue; // not allocated
+    //int max_full_digits = seq->length/4;
     int digitlen = (seq->length+3)/4-1 - seq->digitindex[i];
+    //if(digitlen > max_full_digits)
+    //  digitlen = max_full_digits;
     printf("seq->length = %d, seq->digitindex = %d\n", seq->length, seq->digitindex[i]);
+    for(j = 0; j < seq->allocated[i]; j++)
+      printf("%02X ", seq->field[i][j]);
+    printf("\n");
     int bytelen = (digitlen+1)/2;
     int bits_remaining = seq->length - 8 * bytelen;
     // int complete_bytes = bits_remaining ? bytelen - 1 : bytelen;
@@ -290,17 +341,17 @@ void print_bitsequence(struct S_bitseq *seq)
       if( (bits_remaining & 7) >= 1 && (bits_remaining & 7) <= 4)
       {
         // nibble
-        printf("%01X", mem[0] >> 4);
+        printf("%01X", mem[0] & 0xF);
         bstart = 1;
       }
       if(complete_bytes > 0)
       {
         for(j = bstart; j < complete_bytes; j++)
-          printf("%01X%01X", mem[j] & 0xF, mem[j] >> 4);
+          printf("%01X%01X", mem[j] >> 4, mem[j] & 0xF);
       }
       if(bstart != 0)
       { // niblle
-        printf("%01X", mem[j] & 0xF);
+        printf("%01X", mem[j] >> 4);
       }
       if(bits_remaining > 0)
       { // FIXME: incorrectly fetches remaining bits
@@ -508,9 +559,9 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
             uint8_t value_byte;
             // printf("add digit #%d %s %X\n", digitindex, bsf_name[tbfname], hexdigit);
             if( (digitindex & 1) != 0 )
-              value_byte = hexdigit << 4; // with 4 bit leading zeros
+              value_byte = hexdigit; // with 4 bit leading zeros
             else
-              value_byte = seq->field[tbfname][byteindex] | hexdigit;
+              value_byte = seq->field[tbfname][byteindex] | (hexdigit<<4);
             seq->field[tbfname][byteindex] = value_byte;
             // printf("written %s to %d\n", bsf_name[tbfname] , byteindex);
             seq->digitindex[tbfname] = --digitindex;
