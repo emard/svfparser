@@ -340,6 +340,9 @@ void print_bitsequence(struct S_bitseq *seq)
     uint8_t *mem = seq->field[i] + firstbyte;
     int memlen = seq->allocated[i] - firstbyte;
 
+    int complete_bytes = bits_remaining < 0 ? bytelen - 1 : bytelen;
+    // int complete_bytes = bytelen;
+
     uint8_t n_first_nibble = (bits_remaining & 7) >= 1 && (bits_remaining & 7) <= 4 ? 1 : 0; // 1/0 yes/no output first nibble
     uint8_t *first_nibble = mem; // ptr to byte having first nibble
     int n_complete_bytes = bytelen; // number of complete bytes
@@ -359,8 +362,6 @@ void print_bitsequence(struct S_bitseq *seq)
     for(j = 0; j < memlen; j++)
       printf("%01X%01X ", ReverseNibble[mem[j] >> 4], ReverseNibble[mem[j] & 0xF]);
     printf("\n");
-    // int complete_bytes = bits_remaining ? bytelen - 1 : bytelen;
-    int complete_bytes = bytelen;
     printf("reading from %d\n", firstbyte);
     printf("field %s (%d digits)\n", bsf_name[i], digitlen);
     if( (digitlen > 0 && i != BSF_MASK)
@@ -381,9 +382,23 @@ void print_bitsequence(struct S_bitseq *seq)
           printf("%01X%01X", ReverseNibble[mem[j] >> 4], ReverseNibble[mem[j] & 0xF]);
         printf(" ");
       }
-      if(bstart != 0)
+      if(bstart != 0 && bits_remaining > 0)
       { // niblle
         printf("0x%01X ", ReverseNibble[mem[j] >> 4]);
+      }
+      if(bits_remaining < 0)
+      {
+        // last shifted nibble is partial
+        uint8_t byte_remaining = ReverseNibble[mem[j] >> 4] | (ReverseNibble[mem[j] & 0xF]) << 4;
+        uint8_t additional_bits = bits_remaining & 7;
+        if(additional_bits > 0)
+        {
+          printf("(0x%02X)", byte_remaining);
+          printf("0b");
+          for(j = 0; j < additional_bits; j++, byte_remaining >>= 1)
+            printf("%d", byte_remaining & 1);
+          printf(" ");
+        }
       }
       if(bits_remaining > 0)
       { // FIXME: incorrectly fetches remaining bits
@@ -824,7 +839,7 @@ void init_reversenibble()
       v >>= 1;
     }
     ReverseNibble[i] = r;
-    printf("%1X -> %1X\n", i, r);
+    printf("%1X - %1X\n", i, r);
   }
 }
 
