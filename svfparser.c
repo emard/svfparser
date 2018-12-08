@@ -195,6 +195,8 @@ char *bsf_name[] =
   [BSF_NUM] = NULL
 };
 
+uint8_t ReverseNibble[16];
+
 /*
 the bitbanger
 bsf field type
@@ -322,7 +324,7 @@ void print_bitsequence(struct S_bitseq *seq)
     //  digitlen = max_full_digits;
     printf("seq->length = %d, seq->digitindex = %d\n", seq->length, seq->digitindex[i]);
     for(j = 0; j < seq->allocated[i]; j++)
-      printf("%02X ", seq->field[i][j]);
+      printf("%01X%01X ", ReverseNibble[seq->field[i][j] >> 4], ReverseNibble[seq->field[i][j] & 0xF]);
     printf("\n");
     int bytelen = (digitlen+1)/2;
     int bits_remaining = seq->length - 8 * bytelen;
@@ -341,17 +343,17 @@ void print_bitsequence(struct S_bitseq *seq)
       if( (bits_remaining & 7) >= 1 && (bits_remaining & 7) <= 4)
       {
         // nibble
-        printf("%01X", mem[0] & 0xF);
+        printf("%01X", ReverseNibble[mem[0] & 0xF]);
         bstart = 1;
       }
       if(complete_bytes > 0)
       {
         for(j = bstart; j < complete_bytes; j++)
-          printf("%01X%01X", mem[j] >> 4, mem[j] & 0xF);
+          printf("%01X%01X", ReverseNibble[mem[j] >> 4], ReverseNibble[mem[j] & 0xF]);
       }
       if(bstart != 0)
       { // niblle
-        printf("%01X", mem[j] >> 4);
+        printf("%01X", ReverseNibble[mem[j] >> 4]);
       }
       if(bits_remaining > 0)
       { // FIXME: incorrectly fetches remaining bits
@@ -546,9 +548,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
         }
         // fill hex into allocated space
         // conversion from ascii to hex digit (binary lower 4-bits)
-        uint8_t hexdigit = c < 'A' ? c - '0' : c + 10 - 'A';
-        // todo: 8-bit buffering
-        // work here with complete bytes
+        uint8_t hexdigit = ReverseNibble[c < 'A' ? c - '0' : c + 10 - 'A'];
         if( digitindex >= 0 )
         {
           // buffer the data for later use
@@ -769,6 +769,22 @@ int8_t commandstate(char c)
   return -1; // command incomplete
 }
 
+void init_reversenibble()
+{
+  uint8_t i,j,v,r;     // input bits to be reversed
+
+  for (i = 0; i < 15; i++)
+  {
+    for (v = i, r = 0, j = 0; j < 4; j++)
+    {   
+      r <<= 1;
+      r |= v & 1;
+      v >>= 1;
+    }
+    ReverseNibble[i] = r;
+  }
+}
+
 // index = position in the stream (0 resets FSM)
 // content must come in sequential order
 // length = data length in packet
@@ -789,6 +805,7 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
     lstate = LS_SPACE;
     line_count = 0;
     lbracket = 0;
+    init_reversenibble();
     commandstate('\0');
   }
   uint32_t i;
