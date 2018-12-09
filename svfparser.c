@@ -370,6 +370,8 @@ void print_bitsequence(struct S_bitseq *seq)
         for(j = bstart; j < complete_bytes; j++)
           printf("%01X%01X", ReverseNibble[mem[j] >> 4], ReverseNibble[mem[j] & 0xF]);
         printf(" ");
+        // SPI.transferBytes(uint8_t * data, uint8_t * out, uint32_t size);
+        // SPI.transferBytes(mem, uint8_t * out, complete_bytes);
       }
       if(bstart != 0 && bits_remaining > 0)
       { // niblle
@@ -394,6 +396,8 @@ void print_bitsequence(struct S_bitseq *seq)
           printf("0x");
           for(j = 0; j < additional_bytes; j++)
             printf("%1X%1X", pad_byte >> 4, pad_byte & 0xF);
+          // SPI.writePattern(uint8_t * data, uint8_t size, uint32_t repeat);
+          // SPI.writePattern(&pad_byte, 1, additional_bytes);
         }
       }
     }
