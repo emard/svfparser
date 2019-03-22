@@ -10,6 +10,8 @@ bitbangs data to JTAG and frees RAM for new data.
 
 [SVF Format spec](http://www.jtagtest.com/pdf/svf_specification.pdf)
 
+[JTAG training](http://www2.lauterbach.com/pdf/training_jtag.pdf)
+
 # TODO
 
     [x] fill binary data ready for bitbanging
