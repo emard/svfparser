@@ -18,10 +18,6 @@
 // it can work if bitfields come in this order:
 // TDI,TDO,MASK. SMASK must be ignored.
 
-// 1-direct on-the-fly mode: minimal SDR/SIR buffering
-// 0-standard mode
-uint8_t direct_mode = 1; 
-
 // immediately, buffer can be alloced at invocation of
 // TDI, even shorter than neccessary. In this buffer
 // TDO response is stored until the buffer is full
@@ -133,6 +129,13 @@ enum libxsvf_tap_state
 	LIBXSVF_TAP_NUM = 17,
 };
 
+#if 0
+static int state_endir = LIBXSVF_TAP_IDLE;
+static int state_enddr = LIBXSVF_TAP_IDLE;
+static int state_run = LIBXSVF_TAP_IDLE;
+static int state_endrun = LIBXSVF_TAP_IDLE;
+#endif
+
 char *Tap_states[] =
 {
   [LIBXSVF_TAP_INIT] = "INIT",
@@ -202,19 +205,25 @@ char *bsf_name[] =
 
 uint8_t ReverseNibble[16];
 
-/*
-the bitbanger
-bsf field type
-BSF_*: the field we work on, action to take
-direct: 0-indirect mode, 1-direct mode
-*d: pointer to data (byte addressable)
-n: number of bits to bang
-*/
-int8_t bitbang(int8_t bsf, int8_t direct, uint8_t *d, uint32_t n)
+enum float_parsing_states
 {
+  FLPS_INIT = 0,
+  FLPS_NUM, // integer number part, "0-9", "."->FRAC, "E"->E
+  FLPS_FRAC, // fractional part, "0-9", "E"->E
+  FLPS_E, // "0-9+-"->EXP,
+  FLPS_EXP, // numbers "0-9", ";"->COMPLETE
+  FLPS_COMPLETE,
+  FLPS_ERROR
+};
 
+enum frequency_parsing_states
+{
+  FQPS_INIT = 0,
+  FQPS_VALUE, // floating point value
+  FQPS_COMPLETE,
+  FQPS_ERROR
+};
 
-}
 
 /* ******************* BEGIN COMMAND SERVICE FUNCTIONS ******************* */
 /*
@@ -256,6 +265,12 @@ struct S_jtagspi
   uint32_t pad_bits; // number of padding bits (not 0 if exist)  
 };
 
+struct S_float
+{
+  int number, frac, expsign, exponent;
+};
+
+struct S_float fl;
 
 /* memory storage plan
 
@@ -797,6 +812,144 @@ int8_t cmd_tir(char c)
   return cmd_bitsequence(c, &BS_tir);
 }
 
+int8_t parse_float(char c)
+{
+  static int8_t state = FLPS_INIT;
+  if(c == '!')
+  { // reset parsing state
+    state = FLPS_INIT;
+    fl.number = 0;
+    fl.frac = 0;
+    fl.expsign = 1;
+    fl.exponent = 0;
+    return 0;
+  }
+  switch(state)
+  {
+    case FLPS_INIT:
+      if(c >= '0' && c <= '9')
+      {
+        fl.number = fl.number*10 + (c - '0');
+        state = FLPS_NUM;
+        break;
+      }
+      state = FLPS_ERROR;
+      break;
+    case FLPS_NUM:
+      if(c >= '0' && c <= '9')
+      {
+        fl.number = fl.number*10 + (c - '0');
+        break;
+      }
+      if(c == '.')
+      {
+        state = FLPS_FRAC;
+        break;
+      }
+      if(c == 'e' || c == 'E')
+      {
+        state = FLPS_EXP;
+        break;
+      }
+      state = FLPS_ERROR;
+      break;
+    case FLPS_FRAC:
+      if(c >= '0' && c <= '9')
+      {
+        fl.frac = fl.frac*10 + (c - '0');
+        break;
+      }
+      if(c == 'e' || c == 'E')
+      {
+        state = FLPS_E;
+        break;
+      }
+      state = FLPS_ERROR;
+      break;
+    case FLPS_E:
+      if(c >= '0' && c <= '9')
+      {
+        fl.exponent = fl.exponent*10 + (c - '0');
+        state = FLPS_EXP;
+        break;
+      }
+      if(c == '+')
+      {
+        fl.expsign = 1;
+        state = FLPS_EXP;
+        break;
+      }
+      if(c == '-')
+      {
+        fl.expsign = -1;
+        state = FLPS_EXP;
+        break;
+      }
+      state = FLPS_ERROR;
+      break;
+    case FLPS_EXP:
+      if(c >= '0' && c <= '9')
+      {
+        fl.exponent = fl.exponent*10 + (c - '0');
+        break;
+      }
+      state = FLPS_ERROR;
+      break;
+    default:
+      state = FLPS_ERROR;
+  }
+  return state;
+}
+
+int8_t cmd_frequency(char c)
+{
+  static int8_t state = FQPS_INIT;
+  static int8_t float_parsing_state = FLPS_INIT;
+  if(c == '!')
+  { // reset parsing state
+    state = FQPS_INIT;
+    parse_float('!');
+    return 0;
+  }
+  switch(state)
+  {
+    case FQPS_INIT:
+      if(c == ';')
+      {
+        state = FQPS_COMPLETE;
+        break;
+      }
+      if(c >= '0' && c <= '9')
+      {
+        state = FQPS_VALUE;
+        float_parsing_state = parse_float(c);
+      }
+      break;
+    case FQPS_VALUE:
+      if(c == ';')
+      {
+        printf("FLOAT %d.%dE%c%d ",
+          fl.number, fl.frac, fl.expsign > 0 ? '+' : '-', fl.exponent);
+        state = FQPS_COMPLETE;
+        break;
+      }
+      float_parsing_state = parse_float(c);
+      /*
+      if(float_parsing_state == FLPS_ERROR)
+      {
+        state = FQPS_ERROR;
+        break;
+      }
+      */
+      break;
+    case FQPS_COMPLETE:
+      break;
+    case FQPS_ERROR:
+      break;
+  }
+  return 0;
+}
+
 // struct to command service functions
 struct S_cmd_service
 {
@@ -807,7 +960,7 @@ struct S_cmd_service Cmd_service[] =
 {
   [CMD_ENDDR] = { NULL },
   [CMD_ENDIR] = { NULL },
-  [CMD_FREQUENCY] = { NULL },
+  [CMD_FREQUENCY] = { cmd_frequency },
   [CMD_HDR] = { cmd_hdr },
   [CMD_HIR] = { cmd_hir },
   [CMD_PIO] = { cmd_pio },
