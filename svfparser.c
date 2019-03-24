@@ -4,6 +4,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/*
+[SVF Format spec](http://www.jtagtest.com/pdf/svf_specification.pdf)
+[TI test symposium](http://home.zcu.cz/~dudacek/Kp/seminar2.pdf)
+*/
+
 // max bytes allowed to allocate per bitfield
 // HDR,HIR,TDR,TIR each may need 0-4 bitfields
 // SDR,SIR by the standard should be remembered
@@ -238,6 +243,20 @@ struct S_bitseq
   uint8_t *field[BSF_NUM]; // *tdo, *tdi, *mask, *smask;
 };
 
+// structure ready for the spi accelerated jtag
+struct S_jtagspi
+{
+  uint8_t *header; // ptr to header nibble (not NULL if exists)
+  uint8_t header_bits; // number of header bits 0-7 (not 0 if exists)
+  uint8_t *data; // ptr to data bytes (not NULL if exists)
+  uint32_t data_bytes; // number of data bytes (not 0 if exists)
+  uint8_t *trailer; // ptr to trailer byte (not NULL if exists)
+  uint8_t trailer_bits; // number of trailer bits 0-7 (not 0 if exists)
+  uint8_t pad; // padding value 0x00 or 0xFF
+  uint32_t pad_bits; // number of padding bits (not 0 if exist)  
+};
+
+
 /* memory storage plan
 
 [SVF Format spec](http://www.jtagtest.com/pdf/svf_specification.pdf)
@@ -248,6 +267,7 @@ hardware for TDI and SMASK scan data and is the first bit scanned
 out for TDO and MASK data. 
 
 in SPI interface, MSB (most significant bit of a byte) is shifted first.
+SPI mode 1 clocking scheme is used
 
 we need to determine:
 uint8_t n_first_nibble; // 1/0 yes/no output first nibble
@@ -308,11 +328,68 @@ struct S_bitseq BS_sir = { 0, {0,0,0,0}, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, 
 struct S_bitseq BS_tdr = { 0, {0,0,0,0}, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
 struct S_bitseq BS_tir = { 0, {0,0,0,0}, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
 
+struct S_jtagspi JTAG_TDI, JTAG_TDO;
+uint8_t PAD_BYTE[2] = {0x00, 0xFF};
+
 // bitfield name "SMASK" is longest: 5 chars
 enum bitfield_name_max_len
 {
   BF_NAME_MAXLEN = 5
 };
+
+
+void jtag_tdi_tdo(struct S_jtagspi *tdi, struct S_jtagspi *tdo)
+{
+  int j;
+  printf("      ");
+  if(tdi->header_bits)
+  {
+    printf("0x%01X ", ReverseNibble[tdi->header[0] & 0xF]);
+    if(tdi->header_bits != 4)
+      printf("<-warning 4 bits expected, found %d. ", tdi->header_bits);
+  }
+  if(tdi->data_bytes)
+  {
+    printf("0x");
+    for(j = 0; j < tdi->data_bytes; j++)
+      printf("%01X%01X", ReverseNibble[tdi->data[j] >> 4], ReverseNibble[tdi->data[j] & 0xF]);
+    // printf("%0d data bytes \n", tdi->data_bytes);
+    printf(" ");
+  }
+  if(tdi->trailer_bits)
+  {
+    if(tdi->trailer_bits == 4)
+      printf("0x%01X ", ReverseNibble[tdi->trailer[0] >> 4]);
+    else
+    {
+      uint8_t byte_remaining = tdi->trailer[0];    
+      printf("0b");
+      for(j = 0; j < tdi->trailer_bits; j++, byte_remaining <<= 1)
+        printf("%d", byte_remaining >> 7);
+      printf(" ");
+    }
+    // printf("0x%01X ", ReverseNibble[tdi->trailer[0] >> 4]);
+    // printf("%0d trailer bits \n", tdi->trailer_bits);
+  }
+  if(tdi->pad_bits)
+  {
+    if((tdi->pad_bits & 7) != 0)
+    {
+      printf("0b");
+      for(j = 0; j < (tdi->pad_bits & 7); j++)
+        printf("0");
+      printf(" ");
+    }
+    if((tdi->pad_bits / 8) != 0)
+    {
+      printf("0x");
+      for(j = 0; j < (tdi->pad_bits / 8); j++)
+        printf("00");
+    }
+  }
+  printf("\n");
+}
+
 
 void print_bitsequence(struct S_bitseq *seq)
 {
@@ -340,6 +417,16 @@ void print_bitsequence(struct S_bitseq *seq)
     uint8_t *mem = seq->field[i] + firstbyte;
     int complete_bytes = bits_remaining < 0 ? bytelen - 1 : bytelen;
     uint8_t pad_byte = 0; // FIXME: pad byte value MASK,SMASK = 0xFF
+    
+    // initialize (reset) bitbang pointers
+    JTAG_TDI.header = NULL;
+    JTAG_TDI.header_bits = 0;
+    JTAG_TDI.data = NULL;
+    JTAG_TDI.data_bytes = 0;
+    JTAG_TDI.trailer = NULL;
+    JTAG_TDI.trailer_bits = 0;
+    JTAG_TDI.pad = 0x00; // 0 or 0xFF padding value
+    JTAG_TDI.pad_bits = 0; // number of padding bits (not 0 if exist)
 
     #if 0
     printf("bytelen=%d\n", bytelen);
@@ -363,6 +450,8 @@ void print_bitsequence(struct S_bitseq *seq)
         // nibble
         printf("0x%01X ", ReverseNibble[mem[0] & 0xF]);
         bstart = 1;
+        JTAG_TDI.header = mem;
+        JTAG_TDI.header_bits = 4;
       }
       if(complete_bytes > 0)
       {
@@ -370,27 +459,38 @@ void print_bitsequence(struct S_bitseq *seq)
         for(j = bstart; j < complete_bytes; j++)
           printf("%01X%01X", ReverseNibble[mem[j] >> 4], ReverseNibble[mem[j] & 0xF]);
         printf(" ");
+        JTAG_TDI.data = mem + bstart;
+        JTAG_TDI.data_bytes = complete_bytes-bstart;
         // SPI.transferBytes(uint8_t * data, uint8_t * out, uint32_t size);
         // SPI.transferBytes(mem, uint8_t * out, complete_bytes);
       }
       if(bstart != 0 && bits_remaining > 0)
-      { // niblle
+      { // nibble
         printf("0x%01X ", ReverseNibble[mem[j] >> 4]);
+        JTAG_TDI.trailer = mem + j;
+        JTAG_TDI.trailer_bits = 4;
       }
       if(bits_remaining != 0)
       {
         uint8_t byte_remaining = pad_byte;
+        uint8_t additional_bits = bits_remaining & 7;
+        uint8_t additional_bytes = bits_remaining / 8;
         if(bits_remaining < 0)
           byte_remaining = mem[j];
-        uint8_t additional_bits = bits_remaining & 7;
+        JTAG_TDI.pad_bits = additional_bits + additional_bytes * 8;
         if(additional_bits > 0)
         {
+          if(JTAG_TDI.trailer_bits == 0)
+          {
+            JTAG_TDI.trailer = mem + j;
+            JTAG_TDI.trailer_bits = additional_bits;
+            JTAG_TDI.pad_bits = additional_bytes * 8;
+          }
           printf("0b");
           for(j = 0; j < additional_bits; j++, byte_remaining <<= 1)
             printf("%d", byte_remaining >> 7);
           printf(" ");
         }
-        uint8_t additional_bytes = bits_remaining / 8;
         if(additional_bytes > 0)
         {
           printf("0x");
@@ -402,6 +502,7 @@ void print_bitsequence(struct S_bitseq *seq)
       }
     }
     printf("\n");
+    jtag_tdi_tdo(&JTAG_TDI, &JTAG_TDO);
   }
 }
 
