@@ -352,24 +352,7 @@ enum bitfield_name_max_len
   BF_NAME_MAXLEN = 5
 };
 
-
-enum end_state
-{
-  END_IDLE = 0,
-  END_RESET,
-  END_DRPAUSE,
-  END_IRPAUSE,
-  END_NUM
-};
-
-char *end_name[] =
-{
-  [END_IDLE] = "IDLE",
-  [END_RESET] = "RESET",
-  [END_DRPAUSE] = "DRPAUSE",
-  [END_IRPAUSE] = "IRPAUSE",
-  [END_NUM] = NULL
-};
+/* ************ end state parsing *************** */
 
 enum endxr_state_choice
 {
@@ -386,13 +369,31 @@ enum endxr_parsing_state
   ENPS_ERROR
 };
 
-uint8_t endxr_state[ENDX_NUM] = { END_IDLE, END_IDLE };
+uint8_t endxr_state[ENDX_NUM] = { LIBXSVF_TAP_IDLE, LIBXSVF_TAP_IDLE };
 
 // endstate name IRPAUSE is longest: 7 chars
 enum end_name_max_len
 {
   END_NAME_MAXLEN = 7
 };
+
+/* ************ state path parsing *************** */
+#if 0
+enum state_path_parsing_state
+{
+  SPPS_INIT = 0,
+  SPPS_NAME,
+  SPPS_COMPLETE,
+  SPPS_ERROR
+};
+
+enum state_path_list_max_len
+{
+  STATE_PATH_LIST_MAXLEN = 100;
+};
+
+uint8_t state_path_list[STATE_PATH_LIST_MAXLEN];
+#endif
 
 // bitbanging using SPI
 void jtag_tdi_tdo(struct S_jtagspi *tdi, struct S_jtagspi *tdo)
@@ -978,13 +979,11 @@ int8_t cmd_frequency(char c)
         break;
       }
       float_parsing_state = parse_float(c);
-      /*
       if(float_parsing_state == FLPS_ERROR)
       {
         state = FQPS_ERROR;
         break;
       }
-      */
       break;
     case FQPS_COMPLETE:
       break;
@@ -996,14 +995,14 @@ int8_t cmd_frequency(char c)
 
 int8_t cmd_endxr(char c, uint8_t *endxr_s)
 {
-  static int8_t state = ENPS_INIT;
+  static int8_t state = LIBXSVF_TAP_INIT;
   static int endnamelen = 0;
   static char endname[END_NAME_MAXLEN+1];
   static uint8_t tendname = -1; // tokenized end state name
 
   if(c == '\0')
   { // reset parsing state
-    state = ENPS_INIT;
+    state = LIBXSVF_TAP_INIT;
     endnamelen = 0;
     tendname = -1;
     return 0;
@@ -1026,10 +1025,22 @@ int8_t cmd_endxr(char c, uint8_t *endxr_s)
       if(c == ' ' || c == ';')
       {
         endname[endnamelen] = '\0'; // 0-terminate
-        tendname = search_name(endname, end_name);
+        tendname = search_name(endname, Tap_states);
         if(tendname >= 0)
-          printf("tendname '%s'", end_name[tendname]);
-        state = ENPS_COMPLETE;
+          printf("tendname '%s'", Tap_states[tendname]);
+        if(tendname == LIBXSVF_TAP_IDLE
+        || tendname == LIBXSVF_TAP_RESET
+        || tendname == LIBXSVF_TAP_DRPAUSE
+        || tendname == LIBXSVF_TAP_IRPAUSE
+        )
+        {
+          *endxr_s = tendname;
+          state = ENPS_COMPLETE;
+        }
+        else
+          state = ENPS_ERROR;
+        if(tendname >= 0)
+          printf("tendname '%s' %s", Tap_states[tendname], state == ENPS_ERROR ? "error" : "ok");
         break;
       }
       state = ENPS_ERROR;
