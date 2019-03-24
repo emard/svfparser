@@ -337,7 +337,7 @@ enum bitfield_name_max_len
   BF_NAME_MAXLEN = 5
 };
 
-
+// bitbanging using SPI
 void jtag_tdi_tdo(struct S_jtagspi *tdi, struct S_jtagspi *tdo)
 {
   int j;
@@ -353,7 +353,6 @@ void jtag_tdi_tdo(struct S_jtagspi *tdi, struct S_jtagspi *tdo)
     printf("0x");
     for(j = 0; j < tdi->data_bytes; j++)
       printf("%01X%01X", ReverseNibble[tdi->data[j] >> 4], ReverseNibble[tdi->data[j] & 0xF]);
-    // printf("%0d data bytes \n", tdi->data_bytes);
     printf(" ");
   }
   if(tdi->trailer_bits)
@@ -368,8 +367,6 @@ void jtag_tdi_tdo(struct S_jtagspi *tdi, struct S_jtagspi *tdo)
         printf("%d", byte_remaining >> 7);
       printf(" ");
     }
-    // printf("0x%01X ", ReverseNibble[tdi->trailer[0] >> 4]);
-    // printf("%0d trailer bits \n", tdi->trailer_bits);
   }
   if(tdi->pad_bits)
   {
@@ -377,14 +374,14 @@ void jtag_tdi_tdo(struct S_jtagspi *tdi, struct S_jtagspi *tdo)
     {
       printf("0b");
       for(j = 0; j < (tdi->pad_bits & 7); j++)
-        printf("0");
+        printf("%d", tdi->pad & 1);
       printf(" ");
     }
     if((tdi->pad_bits / 8) != 0)
     {
       printf("0x");
       for(j = 0; j < (tdi->pad_bits / 8); j++)
-        printf("00");
+        printf("%1X%1X", (tdi->pad) >> 4, (tdi->pad) & 0xF);
     }
   }
   printf("\n");
@@ -416,7 +413,7 @@ void print_bitsequence(struct S_bitseq *seq)
     int firstbyte = (seq->digitindex[i]+1)/2;
     uint8_t *mem = seq->field[i] + firstbyte;
     int complete_bytes = bits_remaining < 0 ? bytelen - 1 : bytelen;
-    uint8_t pad_byte = 0; // FIXME: pad byte value MASK,SMASK = 0xFF
+    uint8_t pad_byte = i == BSF_MASK || i == BSF_SMASK ? 0xFF : 0x00;
     
     // initialize (reset) bitbang pointers
     JTAG_TDI.header = NULL;
@@ -425,7 +422,7 @@ void print_bitsequence(struct S_bitseq *seq)
     JTAG_TDI.data_bytes = 0;
     JTAG_TDI.trailer = NULL;
     JTAG_TDI.trailer_bits = 0;
-    JTAG_TDI.pad = 0x00; // 0 or 0xFF padding value
+    JTAG_TDI.pad = pad_byte; // 0 or 0xFF padding value
     JTAG_TDI.pad_bits = 0; // number of padding bits (not 0 if exist)
 
     #if 0
@@ -461,12 +458,12 @@ void print_bitsequence(struct S_bitseq *seq)
         printf(" ");
         JTAG_TDI.data = mem + bstart;
         JTAG_TDI.data_bytes = complete_bytes-bstart;
-        // SPI.transferBytes(uint8_t * data, uint8_t * out, uint32_t size);
-        // SPI.transferBytes(mem, uint8_t * out, complete_bytes);
       }
       if(bstart != 0 && bits_remaining > 0)
       { // nibble
         printf("0x%01X ", ReverseNibble[mem[j] >> 4]);
+        // patch upper nibble of mem[j] with the nibble from pad_byte
+        mem[j] |= pad_byte & 0xF0;
         JTAG_TDI.trailer = mem + j;
         JTAG_TDI.trailer_bits = 4;
       }
@@ -482,6 +479,14 @@ void print_bitsequence(struct S_bitseq *seq)
         {
           if(JTAG_TDI.trailer_bits == 0)
           {
+            // change lower bits to bits from pad byte.
+            // bits in mem[] are reordered
+            // for transmission therefore we have
+            // small bitwise gymnastics:
+            uint8_t mask_byte = 0xFF >> (8-additional_bits); // mask for lower bits
+            uint8_t and_byte = (ReverseNibble[mask_byte >> 4]) 
+                             | (ReverseNibble[mask_byte & 0xF] << 4);
+            mem[j] |= pad_byte & and_byte;
             JTAG_TDI.trailer = mem + j;
             JTAG_TDI.trailer_bits = additional_bits;
             JTAG_TDI.pad_bits = additional_bytes * 8;
@@ -496,8 +501,6 @@ void print_bitsequence(struct S_bitseq *seq)
           printf("0x");
           for(j = 0; j < additional_bytes; j++)
             printf("%1X%1X", pad_byte >> 4, pad_byte & 0xF);
-          // SPI.writePattern(uint8_t * data, uint8_t size, uint32_t repeat);
-          // SPI.writePattern(&pad_byte, 1, additional_bytes);
         }
       }
     }
