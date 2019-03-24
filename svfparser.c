@@ -378,6 +378,14 @@ enum endxr_state_choice
   ENDX_NUM
 };
 
+enum endxr_parsing_state
+{
+  ENPS_INIT = 0,
+  ENPS_NAME,
+  ENPS_COMPLETE,
+  ENPS_ERROR
+};
+
 uint8_t endxr_state[ENDX_NUM] = { END_IDLE, END_IDLE };
 
 // endstate name IRPAUSE is longest: 7 chars
@@ -580,7 +588,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
   static int8_t state = BSPS_INIT;
   static int bfnamelen = 0;
   static char bfname[BF_NAME_MAXLEN+1];
-  static uint8_t tbfname = -1; // tokenized bitfield name
+  static int8_t tbfname = -1; // tokenized bitfield name
   static int32_t digitindex = -1; // countdown hex digits of the bitfield
   if(c == '\0')
   { // reset parsing state
@@ -849,7 +857,7 @@ int8_t cmd_tir(char c)
 int8_t parse_float(char c)
 {
   static int8_t state = FLPS_INIT;
-  if(c == '!')
+  if(c == '\0')
   { // reset parsing state
     state = FLPS_INIT;
     fl.number = 0;
@@ -939,10 +947,10 @@ int8_t cmd_frequency(char c)
 {
   static int8_t state = FQPS_INIT;
   static int8_t float_parsing_state = FLPS_INIT;
-  if(c == '!')
+  if(c == '\0')
   { // reset parsing state
     state = FQPS_INIT;
-    parse_float('!');
+    parse_float('\0');
     return 0;
   }
   switch(state)
@@ -957,7 +965,9 @@ int8_t cmd_frequency(char c)
       {
         state = FQPS_VALUE;
         float_parsing_state = parse_float(c);
+        break;
       }
+      state = FQPS_ERROR;
       break;
     case FQPS_VALUE:
       if(c == ';')
@@ -984,9 +994,60 @@ int8_t cmd_frequency(char c)
   return 0;
 }
 
-int8_t cmd_endxr(char c)
+int8_t cmd_endxr(char c, uint8_t *endxr_s)
 {
+  static int8_t state = ENPS_INIT;
+  static int endnamelen = 0;
+  static char endname[END_NAME_MAXLEN+1];
+  static uint8_t tendname = -1; // tokenized end state name
 
+  if(c == '\0')
+  { // reset parsing state
+    state = ENPS_INIT;
+    endnamelen = 0;
+    tendname = -1;
+    return 0;
+  }
+  switch(state)
+  {
+    case ENPS_INIT:
+      if(c >= 'A' && c <= 'Z')
+      {
+        if(endnamelen < END_NAME_MAXLEN)
+          endname[endnamelen++] = c;
+        else
+        {
+          // name too long, error
+          endname[endnamelen] = '\0'; // 0-terminate
+          state = ENPS_ERROR;
+        }
+        break;
+      }
+      if(c == ' ' || c == ';')
+      {
+        endname[endnamelen] = '\0'; // 0-terminate
+        tendname = search_name(endname, end_name);
+        if(tendname >= 0)
+          printf("tendname '%s'", end_name[tendname]);
+        state = ENPS_COMPLETE;
+        break;
+      }
+      state = ENPS_ERROR;
+      break;
+    default:
+      break;
+  }
+  return 0;
+}
+
+int8_t cmd_enddr(char c)
+{
+  return cmd_endxr(c, &(endxr_state[ENDX_ENDDR]));
+}
+
+int8_t cmd_endir(char c)
+{
+  return cmd_endxr(c, &(endxr_state[ENDX_ENDIR]));
 }
 
 // struct to command service functions
@@ -997,8 +1058,8 @@ struct S_cmd_service
 
 struct S_cmd_service Cmd_service[] =
 {
-  [CMD_ENDDR] = { NULL },
-  [CMD_ENDIR] = { NULL },
+  [CMD_ENDDR] = { cmd_enddr },
+  [CMD_ENDIR] = { cmd_endir },
   [CMD_FREQUENCY] = { cmd_frequency },
   [CMD_HDR] = { cmd_hdr },
   [CMD_HIR] = { cmd_hir },
