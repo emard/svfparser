@@ -352,6 +352,40 @@ enum bitfield_name_max_len
   BF_NAME_MAXLEN = 5
 };
 
+
+enum end_state
+{
+  END_IDLE = 0,
+  END_RESET,
+  END_DRPAUSE,
+  END_IRPAUSE,
+  END_NUM
+};
+
+char *end_name[] =
+{
+  [END_IDLE] = "IDLE",
+  [END_RESET] = "RESET",
+  [END_DRPAUSE] = "DRPAUSE",
+  [END_IRPAUSE] = "IRPAUSE",
+  [END_NUM] = NULL
+};
+
+enum endxr_state_choice
+{
+  ENDX_ENDDR = 0,
+  ENDX_ENDIR,
+  ENDX_NUM
+};
+
+uint8_t endxr_state[ENDX_NUM] = { END_IDLE, END_IDLE };
+
+// endstate name IRPAUSE is longest: 7 chars
+enum end_name_max_len
+{
+  END_NAME_MAXLEN = 7
+};
+
 // bitbanging using SPI
 void jtag_tdi_tdo(struct S_jtagspi *tdi, struct S_jtagspi *tdo)
 {
@@ -948,6 +982,11 @@ int8_t cmd_frequency(char c)
       break;
   }
   return 0;
+}
+
+int8_t cmd_endxr(char c)
+{
+
 }
 
 // struct to command service functions
