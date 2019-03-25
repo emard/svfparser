@@ -394,6 +394,24 @@ enum state_walk_parsing_state
   SWPS_ERROR
 };
 
+/* ************ runtest parsing *************** */
+enum runtest_parsing_state
+{
+  RTPS_INIT = 0,
+  RTPS_SPACE, // not needed?
+  RTPS_BEGINSTATE,
+  RTPS_COUNT,
+  RTPS_CLOCK,
+  RTPS_MINTIME,
+  RTPS_MIN_SEC,
+  RTPS_MAXIMUM,
+  RTPS_MAXTIME,
+  RTPS_MAX_SEC,
+  RTPS_ENDSTATE,
+  RTPS_COMPLETE,
+  RTPS_ERROR
+};
+
 // bitbanging using SPI
 void jtag_tdi_tdo(struct S_jtagspi *tdi, struct S_jtagspi *tdo)
 {
@@ -1093,15 +1111,22 @@ int8_t cmd_state(char c)
         tstatename = search_name(statename, Tap_states);
         if(tstatename >= 0)
           printf("tstatename '%s'", Tap_states[tstatename]);
+        else
+        {
+          state = SWPS_ERROR;
+          break;
+        }
         if(c == ' ')
         {
           state = SWPS_SPACE;
           statenamelen = 0;
           tstatename = -1;
+          break;
         }
         if(c == ';')
         {
           state = SWPS_COMPLETE;
+          break;
         }
         break;
       }
@@ -1137,6 +1162,91 @@ int8_t cmd_state(char c)
   return 0;
 }
 
+int8_t cmd_runtest(char c)
+{
+  static int8_t state = RTPS_INIT;
+  static int statenamelen = 0;
+  static char statename[LIBXSVF_TAP_NAME_MAXLEN+1];
+  static uint8_t tstatename = -1; // tokenized state name
+  if(c == '\0')
+  { // reset parsing state
+    state = RTPS_INIT;
+    statenamelen = 0;
+    tstatename = -1;
+    return 0;
+  }
+  switch(state)
+  {
+    case RTPS_INIT:
+      if(c >= 'A' && c <= 'Z')
+      {
+        if(statenamelen < LIBXSVF_TAP_NAME_MAXLEN)
+          statename[statenamelen++] = c;
+        else
+        {
+          // name too long, error
+          statename[statenamelen] = '\0'; // 0-terminate
+          state = RTPS_ERROR;
+        }
+        break;
+      }
+      if(c == ' ' || c == ';')
+      {
+        statename[statenamelen] = '\0'; // 0-terminate
+        tstatename = search_name(statename, Tap_states);
+        if(tstatename >= 0)
+          printf("t_begin_state_name '%s'", Tap_states[tstatename]);
+        else
+        {
+          state = RTPS_ERROR;
+          break;
+        }
+        if(c == ' ')
+        {
+          state = RTPS_SPACE;
+          statenamelen = 0;
+          tstatename = -1;
+          break;
+        }
+        if(c == ';')
+        {
+          state = RTPS_COMPLETE;
+          break;
+        }
+        break;
+      }
+      state = RTPS_ERROR;
+      break;
+    case RTPS_SPACE:
+      if(c == ' ')
+      {
+        break;
+      }
+      if(c == ';')
+      {
+        state = RTPS_COMPLETE;
+      }
+      if(c >= 'A' && c <= 'Z')
+      {
+        if(statenamelen < LIBXSVF_TAP_NAME_MAXLEN)
+          statename[statenamelen++] = c;
+        else
+        {
+          // name too long, error
+          statename[statenamelen] = '\0'; // 0-terminate
+          state = RTPS_ERROR;
+        }
+        state = RTPS_INIT;
+        break;
+      }
+      state = RTPS_ERROR;
+      break;
+    default:
+      break;
+  }
+  return 0;
+}
+
 
 // struct to command service functions
 struct S_cmd_service
@@ -1153,7 +1263,7 @@ struct S_cmd_service Cmd_service[] =
   [CMD_HIR] = { cmd_hir },
   [CMD_PIO] = { cmd_pio },
   [CMD_PIOMAP] = { NULL },
-  [CMD_RUNTEST] = { NULL },
+  [CMD_RUNTEST] = { cmd_runtest },
   [CMD_SDR] = { cmd_sdr },
   [CMD_SIR] = { cmd_sir },
   [CMD_STATE] = { cmd_state },
