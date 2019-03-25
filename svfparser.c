@@ -26,7 +26,12 @@
 // for masking and verification
 const int MAX_alloc = 30000;
 
-
+#define DBG_PRINT 0
+#if DBG_PRINT
+#define PRINTF(f_, ...) printf((f_), ##__VA_ARGS__)
+#else
+#define PRINTF(f_, ...)
+#endif
 
 // lowest level lexical parser states
 // to eliminate comments and whitespaces
@@ -171,7 +176,7 @@ enum libxsvf_tap_name_max_len
 // list is array of strings, null pointer terminated
 int8_t search_name(char *cmd, char *list[])
 {
-  // printf("<SEARCH %s>", cmd);
+  // PRINTF("<SEARCH %s>", cmd);
   int i;
   for(i = 0; list[i] != NULL; i++)
     if(strcmp(cmd, list[i]) == 0)
@@ -471,14 +476,14 @@ void print_bitsequence(struct S_bitseq *seq)
   // print last 0-7 data bits and trailing 0-bits
   // print trailing 0-bytes
   int i, j;
-  // printf("length %d bit\n", seq->length);
+  // PRINTF("length %d bit\n", seq->length);
   int tdo_digitlen = (seq->length+3)/4-1 - seq->digitindex[BSF_TDO];
   for(i = 0; i < BSF_NUM; i++)
   {
     if(seq->allocated[i] == 0 || seq->field[i] == NULL)
       continue; // not allocated
 
-    // printf("seq->length = %d, seq->digitindex = %d\n", seq->length, seq->digitindex[i]);
+    // PRINTF("seq->length = %d, seq->digitindex = %d\n", seq->length, seq->digitindex[i]);
     // from seq->length and seq->digitindex we calculate following:
 
     //int max_full_digits = seq->length/4;
@@ -501,17 +506,17 @@ void print_bitsequence(struct S_bitseq *seq)
     JTAG_TDI.pad_bits = 0; // number of padding bits (not 0 if exist)
 
     #if 0
-    printf("bytelen=%d\n", bytelen);
-    printf("bits_remaining=%d\n", bits_remaining);
+    PRINTF("bytelen=%d\n", bytelen);
+    PRINTF("bits_remaining=%d\n", bits_remaining);
     int memlen = seq->allocated[i] - firstbyte;
-    printf("memlen=%d\n", memlen);
+    PRINTF("memlen=%d\n", memlen);
     for(j = 0; j < memlen; j++)
-      printf("%01X%01X ", ReverseNibble[mem[j] >> 4], ReverseNibble[mem[j] & 0xF]);
-    printf("\n");
-    printf("reading from %d\n", firstbyte);
-    printf("field %s (%d digits)\n", bsf_name[i], digitlen);
+      PRINTF("%01X%01X ", ReverseNibble[mem[j] >> 4], ReverseNibble[mem[j] & 0xF]);
+    PRINTF("\n");
+    PRINTF("reading from %d\n", firstbyte);
+    PRINTF("field %s (%d digits)\n", bsf_name[i], digitlen);
     #endif
-    printf("%5s ", bsf_name[i]);
+    PRINTF("%5s ", bsf_name[i]);
     if( (digitlen > 0 && i != BSF_MASK)
     ||  (digitlen > 0 && i == BSF_MASK && tdo_digitlen > 0)
     )
@@ -520,23 +525,23 @@ void print_bitsequence(struct S_bitseq *seq)
       if( (bits_remaining & 7) >= 1 && (bits_remaining & 7) <= 4)
       {
         // nibble
-        printf("0x%01X ", ReverseNibble[mem[0] & 0xF]);
+        PRINTF("0x%01X ", ReverseNibble[mem[0] & 0xF]);
         bstart = 1;
         JTAG_TDI.header = mem;
         JTAG_TDI.header_bits = 4;
       }
       if(complete_bytes > 0)
       {
-        printf("0x");
+        PRINTF("0x");
         for(j = bstart; j < complete_bytes; j++)
-          printf("%01X%01X", ReverseNibble[mem[j] >> 4], ReverseNibble[mem[j] & 0xF]);
-        printf(" ");
+          PRINTF("%01X%01X", ReverseNibble[mem[j] >> 4], ReverseNibble[mem[j] & 0xF]);
+        PRINTF(" ");
         JTAG_TDI.data = mem + bstart;
         JTAG_TDI.data_bytes = complete_bytes-bstart;
       }
       if(bstart != 0 && bits_remaining > 0)
       { // nibble
-        printf("0x%01X ", ReverseNibble[mem[j] >> 4]);
+        PRINTF("0x%01X ", ReverseNibble[mem[j] >> 4]);
         // patch upper nibble of mem[j] with the nibble from pad_byte
         mem[j] |= pad_byte & 0xF0;
         JTAG_TDI.trailer = mem + j;
@@ -566,20 +571,20 @@ void print_bitsequence(struct S_bitseq *seq)
             JTAG_TDI.trailer_bits = additional_bits;
             JTAG_TDI.pad_bits = additional_bytes * 8;
           }
-          printf("0b");
+          PRINTF("0b");
           for(j = 0; j < additional_bits; j++, byte_remaining <<= 1)
-            printf("%d", byte_remaining >> 7);
-          printf(" ");
+            PRINTF("%d", byte_remaining >> 7);
+          PRINTF(" ");
         }
         if(additional_bytes > 0)
         {
-          printf("0x");
+          PRINTF("0x");
           for(j = 0; j < additional_bytes; j++)
-            printf("%1X%1X", pad_byte >> 4, pad_byte & 0xF);
+            PRINTF("%1X%1X", pad_byte >> 4, pad_byte & 0xF);
         }
       }
     }
-    printf("\n");
+    PRINTF("\n");
     jtag_tdi_tdo(&JTAG_TDI, &JTAG_TDO);
   }
 }
@@ -588,12 +593,12 @@ void print_buffer()
 {
   if(Completed_command == CMD_SIR)
   {
-    printf("SIR buffer:\n");
+    PRINTF("SIR buffer:\n");
     print_bitsequence(&BS_sir);
   }
   if(Completed_command == CMD_SDR)
   {
-    printf("SDR buffer:\n");
+    PRINTF("SDR buffer:\n");
     print_bitsequence(&BS_sdr);
   }
 }
@@ -656,7 +661,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
       }
       if(c == ' ')
       { // space - end of length, proceed getting the name
-        printf("L%d", seq->length);
+        PRINTF("L%d", seq->length);
         bfname[0] = '\0';
         bfnamelen = 0;
         tbfname = -1;
@@ -665,7 +670,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
         for(int i = 0; i < BSF_NUM; i++)
           if(seq->length_prev[i] != seq->length)
           {
-            // printf("reset length");
+            // PRINTF("reset length");
             seq->digitindex[i] = (seq->length+3)/4-1;
           }
         break;
@@ -674,7 +679,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
       {
         if(seq->length == 0)
         {
-          printf("L%d", seq->length);
+          PRINTF("L%d", seq->length);
           state = BSPS_COMPLETE;
         }
         else
@@ -688,7 +693,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
         bfname[bfnamelen] = '\0'; // 0-terminate
         tbfname = search_name(bfname, bsf_name);
         if(tbfname >= 0)
-          printf("tbfname '%s'", bsf_name[tbfname]);
+          PRINTF("tbfname '%s'", bsf_name[tbfname]);
         state = BSPS_VALUEOPEN;
         break;
       }
@@ -717,7 +722,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
           break;        
         }
         digitindex = (seq->length+3)/4-1; // start inserting at highest position downwards
-        printf("open");
+        PRINTF("open");
         state = BSPS_VALUE;
         // it is allowed to allocate less than required length
         // just issue some warnings
@@ -727,7 +732,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
         // apply MAX alloc limit
         if(alloc_bytes > MAX_alloc)
         {
-          printf("WARNING: required %d bytes for bitfield exceeds limit. Allocating only %d bytes\n",
+          PRINTF("WARNING: required %d bytes for bitfield exceeds limit. Allocating only %d bytes\n",
             alloc_bytes, MAX_alloc);
           alloc_bytes = MAX_alloc;
         }
@@ -735,7 +740,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
         seq->field[tbfname] = realloc(seq->field[tbfname], alloc_bytes);
         if(seq->field[tbfname] == NULL)
         {
-          printf("Memory Allocation Failed\n");
+          PRINTF("Memory Allocation Failed\n");
           state = BSPS_ERROR;
           break;
         }
@@ -774,18 +779,18 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
           if( byteindex < seq->allocated[tbfname] )
           {
             uint8_t value_byte;
-            // printf("add digit #%d %s %X\n", digitindex, bsf_name[tbfname], hexdigit);
+            // PRINTF("add digit #%d %s %X\n", digitindex, bsf_name[tbfname], hexdigit);
             if( (digitindex & 1) != 0 )
               value_byte = hexdigit; // with 4 bit leading zeros
             else
               value_byte = seq->field[tbfname][byteindex] | (hexdigit<<4);
             seq->field[tbfname][byteindex] = value_byte;
-            // printf("written %s to %d\n", bsf_name[tbfname] , byteindex);
+            // PRINTF("written %s to %d\n", bsf_name[tbfname] , byteindex);
             seq->digitindex[tbfname] = --digitindex;
           }
         }
         else
-          printf("********** OVERRUN %d **********\n", digitindex);
+          PRINTF("********** OVERRUN %d **********\n", digitindex);
         break;
       }
       if(c == ')')
@@ -805,7 +810,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
           seq->digitindex[tbfname] = -1;
         }
         #endif
-        printf("close");
+        PRINTF("close");
         bfname[0] = '\0';
         bfnamelen = 0;
         tbfname = -1;
@@ -838,7 +843,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
       state = BSPS_ERROR;
       break;
   }
-  // printf("%c*", c);
+  // PRINTF("%c*", c);
   return 0;
 }
 
@@ -990,7 +995,7 @@ int8_t cmd_frequency(char c)
     case FQPS_VALUE:
       if(c == ';')
       {
-        printf("FLOAT %d.%dE%c%d ",
+        PRINTF("FLOAT %d.%dE%c%d ",
           fl.number, fl.frac, fl.expsign > 0 ? '+' : '-', fl.exponent);
         state = FQPS_COMPLETE;
         break;
@@ -1055,7 +1060,7 @@ int8_t cmd_endxr(char c, uint8_t *endxr_s)
         else
           state = ENPS_ERROR;
         if(tendname >= 0)
-          printf("tendname '%s' %s", Tap_states[tendname], state == ENPS_ERROR ? "error" : "ok");
+          PRINTF("tendname '%s' %s", Tap_states[tendname], state == ENPS_ERROR ? "error" : "ok");
         break;
       }
       state = ENPS_ERROR;
@@ -1110,7 +1115,7 @@ int8_t cmd_state(char c)
         statename[statenamelen] = '\0'; // 0-terminate
         tstatename = search_name(statename, Tap_states);
         if(tstatename >= 0)
-          printf("tstatename '%s'", Tap_states[tstatename]);
+          PRINTF("tstatename '%s'", Tap_states[tstatename]);
         else
         {
           state = SWPS_ERROR;
@@ -1195,7 +1200,7 @@ int8_t cmd_runtest(char c)
         statename[statenamelen] = '\0'; // 0-terminate
         tstatename = search_name(statename, Tap_states);
         if(tstatename >= 0)
-          printf("t_begin_state_name '%s'", Tap_states[tstatename]);
+          PRINTF("t_begin_state_name '%s'", Tap_states[tstatename]);
         else
         {
           state = RTPS_ERROR;
@@ -1322,7 +1327,7 @@ int8_t commandstate(char c)
               cdstate = CD_ERROR;
             else
             {
-              printf("<found %s>", Commands[command]);
+              PRINTF("<found %s>", Commands[command]);
               // TODO reset previous buffered content
               // reset parser state of the command service function
               if(Cmd_service[command].service)
@@ -1375,7 +1380,7 @@ void init_reversenibble()
       v >>= 1;
     }
     ReverseNibble[i] = r;
-    printf("%1X - %1X\n", i, r);
+    PRINTF("%1X - %1X\n", i, r);
   }
 }
 
@@ -1389,7 +1394,7 @@ void init_reversenibble()
 // -1 - finished, error
 int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_t final)
 {
-  printf("index %d final %d\n", index, final);
+  PRINTF("index %d final %d\n", index, final);
   static uint8_t lstate = LS_SPACE;
   static uint32_t line_count = 0;
   static uint8_t lbracket = 0;
@@ -1450,7 +1455,7 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
         lstate = LS_SPACE;
         if(lbracket == 0)
         {
-          printf("_");
+          PRINTF("_");
           cmderr = commandstate(c); // process the space
         }
         break;
@@ -1468,19 +1473,19 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
     {
       // only active text appears here. comments and 
       // multiple spaces are filtered out
-      printf("%c", c);
+      PRINTF("%c", c);
       cmderr = commandstate(c);      
       if(cmderr > 0)
       {
-        printf("command %s complete\n", Commands[Completed_command]);
+        PRINTF("command %s complete\n", Commands[Completed_command]);
         print_buffer();
       }
     }
   }
   if(cmderr < 0)
-    printf("command incomplete\n");
+    PRINTF("command incomplete\n");
   if(cmderr > 0)
-    printf("command complete\n");
-  printf("line count %d\n", line_count);
+    PRINTF("command complete\n");
+  PRINTF("line count %d\n", line_count);
   return 0;
 } 
