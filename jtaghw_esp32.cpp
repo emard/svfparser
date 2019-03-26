@@ -26,29 +26,18 @@ void jtag_tdi_tdo(struct S_jtaghw *tdi, struct S_jtaghw *tdo)
   {
     data = tdi->header[0] & 0xF;
     spi_jtag->transferBits(data, &data, tdi->header_bits); // should be always 4 bits
-    if(tdo)
-    {
-      cmp = tdo->header[0] & 0xF;
-      if(data != cmp)
-        tdo_mismatch |= 1;
-    }
+    tdo->header[0] = data & 0xF;
   }
   if(tdi->data_bytes)
   {
-    spi_jtag->transferBytes(tdi->data, tdi->data, tdi->data_bytes);
-    if(tdo)
-      tdo_mismatch |= memcmp(tdi->data, tdo->data, tdi->data_bytes);
+    spi_jtag->transferBytes(tdi->data, tdo->data, tdi->data_bytes);
   }
   if(tdi->trailer_bits)
   {
     data = (tdi->trailer[0]) >> (8 - tdi->trailer_bits);
     spi_jtag->transferBits(data, &data, tdi->trailer_bits);
-    if(tdo)
-    {
-      cmp = (tdo->trailer[0] >> (8 - tdo->trailer_bits);
-      if(data != cmp)
-        tdo_mismatch |= 1;
-    }
+    data <<= (8 - tdi->trailer_bits);
+    tdo->trailer[0] = data;
   }
   if(tdi->pad_bits)
   {
@@ -57,13 +46,16 @@ void jtag_tdi_tdo(struct S_jtaghw *tdi, struct S_jtaghw *tdo)
     {
       data = tdi->pad;
       spi_jtag->transferBits(data, &data, tdi->pad_bits);
+      /* TODO result of padded data should be written to allocated mem
       if(tdo)
       {
         cmp = tdo->pad;
         if(data != cmp)
           tdo_mismatch |= 1;
       }
+      */
     }
+    /* TODO result of padded data should be written to allocated mem
     if((tdi->pad_bits / 8) != 0)
     {
       for(j = 0; j < (tdi->pad_bits / 8); j++)
@@ -78,6 +70,7 @@ void jtag_tdi_tdo(struct S_jtaghw *tdi, struct S_jtaghw *tdo)
         }
       }
     }
+    */
   }
 }
 
