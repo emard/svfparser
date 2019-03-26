@@ -1,9 +1,18 @@
 #include <stdint.h>
 #include "svfparser.h"
+#include "jtaghw_print.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h> // toupper()
+
+#define DBG_PRINT 1
+#if DBG_PRINT
+#define PRINTF(f_, ...) printf((f_), ##__VA_ARGS__)
+#else
+#define PRINTF(f_, ...)
+#endif
+
 
 /*
 [SVF Format spec](http://www.jtagtest.com/pdf/svf_specification.pdf)
@@ -26,13 +35,6 @@
 // Response (even partial) can be optionally used later
 // for masking and verification
 const int MAX_alloc = 30000;
-
-#define DBG_PRINT 1
-#if DBG_PRINT
-#define PRINTF(f_, ...) printf((f_), ##__VA_ARGS__)
-#else
-#define PRINTF(f_, ...)
-#endif
 
 // lowest level lexical parser states
 // to eliminate comments and whitespaces
@@ -72,7 +74,7 @@ enum
   CMD_NUM // LAST: represents number of reserved words
 };
 
-char *Commands[] =
+const char *Commands[] =
 {
   [CMD_ENDDR] = "ENDDR",
   [CMD_ENDIR] = "ENDIR",
@@ -135,7 +137,7 @@ enum libxsvf_tap_state
 	LIBXSVF_TAP_NUM = 17,
 };
 
-char *Tap_states[] =
+const char *Tap_states[] =
 {
   [LIBXSVF_TAP_INIT] = "INIT",
   [LIBXSVF_TAP_RESET] = "RESET",
@@ -157,34 +159,11 @@ char *Tap_states[] =
   [LIBXSVF_TAP_NUM] = NULL
 };
 
-#if 0
-static int state_endir = LIBXSVF_TAP_IDLE;
-static int state_enddr = LIBXSVF_TAP_IDLE;
-static int state_run = LIBXSVF_TAP_IDLE;
-static int state_endrun = LIBXSVF_TAP_IDLE;
-#endif
-
-
 // endstate name DRCAPTURE is longest: 9 chars
 enum libxsvf_tap_name_max_len
 {
   LIBXSVF_TAP_NAME_MAXLEN = 9
 };
-
-
-// search command
-// >= 0 : tokenized command
-// < 0 : command not found
-// list is array of strings, null pointer terminated
-int8_t search_name(char *cmd, char *list[])
-{
-  // PRINTF("<SEARCH %s>", cmd);
-  int i;
-  for(i = 0; list[i] != NULL; i++)
-    if(strcmp(cmd, list[i]) == 0)
-      return i;
-  return -1;
-}
 
 // common states for HDR,HIR,SDR,SIR,TDR,TIR
 enum bit_sequence_parsing_states
@@ -208,7 +187,7 @@ enum bit_sequence_field
   BSF_NUM
 };
 
-char *bsf_name[] =
+const char *bsf_name[] =
 {
   [BSF_TDO] = "TDO",
   [BSF_TDI] = "TDI",
@@ -216,8 +195,6 @@ char *bsf_name[] =
   [BSF_SMASK] = "SMASK",
   [BSF_NUM] = NULL
 };
-
-uint8_t ReverseNibble[16];
 
 enum float_parsing_states
 {
@@ -239,21 +216,15 @@ enum frequency_parsing_states
 };
 
 
-/* ******************* BEGIN COMMAND SERVICE FUNCTIONS ******************* */
-/*
-input: '!' - resets global parser state
-       '\0' - resets line parser state
-       letter - incoming char by char
-return value:
-       0 - ok
-      <0 - error
-*/
+#if 0
+static int state_endir = LIBXSVF_TAP_IDLE;
+static int state_enddr = LIBXSVF_TAP_IDLE;
+static int state_run = LIBXSVF_TAP_IDLE;
+static int state_endrun = LIBXSVF_TAP_IDLE;
+#endif
 
-int8_t cmd_pio(char c)
-{
-  puts("PIO NOT SUPPORTED");
-  return 0;
-}
+uint8_t PAD_BYTE[2] = {0x00, 0xFF};
+uint8_t ReverseNibble[16];
 
 // bit sequence struct common for
 // HDR,HIR,SDR,SIR,TDR,TIR
@@ -266,19 +237,6 @@ struct S_bitseq
   uint8_t *field[BSF_NUM]; // *tdo, *tdi, *mask, *smask;
 };
 
-// structure ready for the spi accelerated jtag
-struct S_jtagspi
-{
-  uint8_t *header; // ptr to header nibble (not NULL if exists)
-  uint8_t header_bits; // number of header bits 0-7 (not 0 if exists)
-  uint8_t *data; // ptr to data bytes (not NULL if exists)
-  uint32_t data_bytes; // number of data bytes (not 0 if exists)
-  uint8_t *trailer; // ptr to trailer byte (not NULL if exists)
-  uint8_t trailer_bits; // number of trailer bits 0-7 (not 0 if exists)
-  uint8_t pad; // padding value 0x00 or 0xFF
-  uint32_t pad_bits; // number of padding bits (not 0 if exist)  
-};
-
 struct S_float
 {
   int number, frac, expsign, exponent;
@@ -286,6 +244,7 @@ struct S_float
 };
 
 struct S_float fl;
+
 
 /* memory storage plan
 
@@ -358,9 +317,6 @@ struct S_bitseq BS_sir = { 0, {0,0,0,0}, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, 
 struct S_bitseq BS_tdr = { 0, {0,0,0,0}, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
 struct S_bitseq BS_tir = { 0, {0,0,0,0}, {-1,-1,-1,-1}, {0,0,0,0}, {NULL, NULL, NULL, NULL} };
 
-struct S_jtagspi JTAG_TDI, JTAG_TDO;
-uint8_t PAD_BYTE[2] = {0x00, 0xFF};
-
 // bitfield name "SMASK" is longest: 5 chars
 enum bitfield_name_max_len
 {
@@ -432,7 +388,7 @@ enum runtest_words_token
   RT_WORD_NUM
 };
 
-char *runtest_words[] =
+const char *runtest_words[] =
 {
   [RT_WORD_TCK] = "TCK",
   [RT_WORD_SCK] = "SCK",
@@ -448,57 +404,10 @@ enum runtest_name_max_len
   RUNTEST_NAME_MAXLEN = 9
 };
 
-// bitbanging using SPI
-void jtag_tdi_tdo(struct S_jtagspi *tdi, struct S_jtagspi *tdo)
-{
-  int j;
-  printf("      ");
-  if(tdi->header_bits)
-  {
-    printf("0x%01X ", ReverseNibble[tdi->header[0] & 0xF]);
-    if(tdi->header_bits != 4)
-      printf("<-warning 4 bits expected, found %d. ", tdi->header_bits);
-  }
-  if(tdi->data_bytes)
-  {
-    printf("0x");
-    for(j = 0; j < tdi->data_bytes; j++)
-      printf("%01X%01X", ReverseNibble[tdi->data[j] >> 4], ReverseNibble[tdi->data[j] & 0xF]);
-    printf(" ");
-  }
-  if(tdi->trailer_bits)
-  {
-    if(tdi->trailer_bits == 4)
-      printf("0x%01X ", ReverseNibble[tdi->trailer[0] >> 4]);
-    else
-    {
-      uint8_t byte_remaining = tdi->trailer[0];    
-      printf("0b");
-      for(j = 0; j < tdi->trailer_bits; j++, byte_remaining <<= 1)
-        printf("%d", byte_remaining >> 7);
-      printf(" ");
-    }
-  }
-  if(tdi->pad_bits)
-  {
-    if((tdi->pad_bits & 7) != 0)
-    {
-      printf("0b");
-      for(j = 0; j < (tdi->pad_bits & 7); j++)
-        printf("%d", tdi->pad & 1);
-      printf(" ");
-    }
-    if((tdi->pad_bits / 8) != 0)
-    {
-      printf("0x");
-      for(j = 0; j < (tdi->pad_bits / 8); j++)
-        printf("%1X%1X", (tdi->pad) >> 4, (tdi->pad) & 0xF);
-    }
-  }
-  printf("\n");
-}
+struct S_jtaghw JTAG_TDI, JTAG_TDO;
 
 
+/* ***************** bit sequence output ********************** */
 void print_bitsequence(struct S_bitseq *seq)
 {
   // print what would be bitbanged
@@ -632,6 +541,37 @@ void print_buffer()
     PRINTF("SDR buffer:\n");
     print_bitsequence(&BS_sdr);
   }
+}
+
+// search command
+// >= 0 : tokenized command
+// < 0 : command not found
+// list is array of strings, null pointer terminated
+int8_t search_name(char *cmd, const char *list[])
+{
+  // PRINTF("<SEARCH %s>", cmd);
+  int i;
+  for(i = 0; list[i] != NULL; i++)
+    if(strcmp(cmd, list[i]) == 0)
+      return i;
+  return -1;
+}
+
+
+/* ******************* BEGIN COMMAND SERVICE FUNCTIONS ******************* */
+/*
+input: '!' - resets global parser state
+       '\0' - resets line parser state
+       letter - incoming char by char
+return value:
+       0 - ok
+      <0 - error
+*/
+
+int8_t cmd_pio(char c)
+{
+  puts("PIO NOT SUPPORTED");
+  return 0;
 }
 
 
@@ -768,7 +708,7 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
           alloc_bytes = MAX_alloc;
         }
         // realloc now the bitfield
-        seq->field[tbfname] = realloc(seq->field[tbfname], alloc_bytes);
+        seq->field[tbfname] = (uint8_t *)realloc(seq->field[tbfname], alloc_bytes);
         if(seq->field[tbfname] == NULL)
         {
           PRINTF("Memory Allocation Failed\n");
@@ -1367,7 +1307,6 @@ int8_t cmd_runtest(char c)
   return 0;
 }
 
-
 // struct to command service functions
 struct S_cmd_service
 {
@@ -1392,8 +1331,6 @@ struct S_cmd_service Cmd_service[] =
   [CMD_TRST] = { NULL },
 };
 /* ******************* END COMMAND SERVICE FUNCTIONS ******************* */
-
-
 
 // '\0' char will reset command state (new line)
 /*

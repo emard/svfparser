@@ -1,7 +1,10 @@
 all: svfparser
 
-svfparser: svfparser.c main.c svfparser.h
-	gcc -g -Wall svfparser.c main.c -o $@
+TYPE=print
+#TYPE=esp32
+
+svfparser: svfparser.cpp main.cpp svfparser.h jtaghw_$(TYPE).h
+	gcc -g -Wall svfparser.cpp jtaghw_$(TYPE).cpp main.cpp -o $@
 
 clean:
 	rm -f *.o *~ svfparser
