@@ -59,3 +59,13 @@ void jtag_tdi_tdo(struct S_jtaghw *tdi, struct S_jtaghw *tdo)
   }
   PRINTF("\n");
 }
+
+void jtag_open()
+{
+  PRINTF("jtag open\n");
+}
+
+void jtag_close()
+{
+  PRINTF("jtag close\n");
+}

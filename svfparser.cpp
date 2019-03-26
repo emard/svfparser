@@ -408,7 +408,7 @@ struct S_jtaghw JTAG_TDI, JTAG_TDO;
 
 
 /* ***************** bit sequence output ********************** */
-void print_bitsequence(struct S_bitseq *seq)
+void play_bitsequence(struct S_bitseq *seq)
 {
   // print what would be bitbanged
   // if byte incomplete, print first 4 data bits
@@ -529,17 +529,17 @@ void print_bitsequence(struct S_bitseq *seq)
   }
 }
 
-void print_buffer()
+void play_buffer()
 {
   if(Completed_command == CMD_SIR)
   {
     PRINTF("SIR buffer:\n");
-    print_bitsequence(&BS_sir);
+    play_bitsequence(&BS_sir);
   }
   if(Completed_command == CMD_SDR)
   {
     PRINTF("SDR buffer:\n");
-    print_bitsequence(&BS_sdr);
+    play_bitsequence(&BS_sdr);
   }
 }
 
@@ -1457,6 +1457,7 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
     line_count = 0;
     lbracket = 0;
     init_reversenibble();
+    jtag_open();
     commandstate('\0');
   }
   uint32_t i;
@@ -1531,10 +1532,12 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
       if(cmderr > 0)
       {
         PRINTF("command %s complete\n", Commands[Completed_command]);
-        print_buffer();
+        play_buffer();
       }
     }
   }
+  if(final)
+    jtag_close();
   if(cmderr < 0)
     PRINTF("command incomplete\n");
   if(cmderr > 0)

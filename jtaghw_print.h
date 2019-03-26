@@ -17,5 +17,7 @@ struct S_jtaghw
 };
 
 void jtag_tdi_tdo(struct S_jtaghw *tdi, struct S_jtaghw *tdo);
+void jtag_open();
+void jtag_close();
 
 #endif
