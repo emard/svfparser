@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h> // toupper()
 
 /*
 [SVF Format spec](http://www.jtagtest.com/pdf/svf_specification.pdf)
@@ -26,7 +27,7 @@
 // for masking and verification
 const int MAX_alloc = 30000;
 
-#define DBG_PRINT 0
+#define DBG_PRINT 1
 #if DBG_PRINT
 #define PRINTF(f_, ...) printf((f_), ##__VA_ARGS__)
 #else
@@ -134,13 +135,6 @@ enum libxsvf_tap_state
 	LIBXSVF_TAP_NUM = 17,
 };
 
-#if 0
-static int state_endir = LIBXSVF_TAP_IDLE;
-static int state_enddr = LIBXSVF_TAP_IDLE;
-static int state_run = LIBXSVF_TAP_IDLE;
-static int state_endrun = LIBXSVF_TAP_IDLE;
-#endif
-
 char *Tap_states[] =
 {
   [LIBXSVF_TAP_INIT] = "INIT",
@@ -162,6 +156,14 @@ char *Tap_states[] =
   [LIBXSVF_TAP_IRUPDATE] = "IRUPDATE",
   [LIBXSVF_TAP_NUM] = NULL
 };
+
+#if 0
+static int state_endir = LIBXSVF_TAP_IDLE;
+static int state_enddr = LIBXSVF_TAP_IDLE;
+static int state_run = LIBXSVF_TAP_IDLE;
+static int state_endrun = LIBXSVF_TAP_IDLE;
+#endif
+
 
 // endstate name DRCAPTURE is longest: 9 chars
 enum libxsvf_tap_name_max_len
@@ -280,6 +282,7 @@ struct S_jtagspi
 struct S_float
 {
   int number, frac, expsign, exponent;
+  int8_t state;
 };
 
 struct S_float fl;
@@ -403,6 +406,8 @@ enum state_walk_parsing_state
 enum runtest_parsing_state
 {
   RTPS_INIT = 0,
+  RTPS_WORD,
+  RTPS_NUMBER,
   RTPS_SPACE, // not needed?
   RTPS_BEGINSTATE,
   RTPS_COUNT,
@@ -415,6 +420,32 @@ enum runtest_parsing_state
   RTPS_ENDSTATE,
   RTPS_COMPLETE,
   RTPS_ERROR
+};
+
+enum runtest_words_token
+{
+  RT_WORD_TCK = 0,
+  RT_WORD_SCK,
+  RT_WORD_SEC,
+  RT_WORD_MAXIMUM,
+  RT_WORD_ENDSTATE,
+  RT_WORD_NUM
+};
+
+char *runtest_words[] =
+{
+  [RT_WORD_TCK] = "TCK",
+  [RT_WORD_SCK] = "SCK",
+  [RT_WORD_SEC] = "SEC",
+  [RT_WORD_MAXIMUM] = "MAXIMUM",
+  [RT_WORD_ENDSTATE] = "ENDSTATE",
+  [RT_WORD_NUM] = NULL
+};
+
+// max name length for all runtest names
+enum runtest_name_max_len
+{
+  RUNTEST_NAME_MAXLEN = 9
 };
 
 // bitbanging using SPI
@@ -879,26 +910,26 @@ int8_t cmd_tir(char c)
 
 int8_t parse_float(char c)
 {
-  static int8_t state = FLPS_INIT;
+  // static int8_t state = FLPS_INIT;
   if(c == '\0')
   { // reset parsing state
-    state = FLPS_INIT;
+    fl.state = FLPS_INIT;
     fl.number = 0;
     fl.frac = 0;
     fl.expsign = 1;
     fl.exponent = 0;
-    return 0;
+    return fl.state;
   }
-  switch(state)
+  switch(fl.state)
   {
     case FLPS_INIT:
       if(c >= '0' && c <= '9')
       {
         fl.number = fl.number*10 + (c - '0');
-        state = FLPS_NUM;
+        fl.state = FLPS_NUM;
         break;
       }
-      state = FLPS_ERROR;
+      fl.state = FLPS_ERROR;
       break;
     case FLPS_NUM:
       if(c >= '0' && c <= '9')
@@ -908,15 +939,15 @@ int8_t parse_float(char c)
       }
       if(c == '.')
       {
-        state = FLPS_FRAC;
+        fl.state = FLPS_FRAC;
         break;
       }
-      if(c == 'e' || c == 'E')
+      if(c == 'E')
       {
-        state = FLPS_EXP;
+        fl.state = FLPS_EXP;
         break;
       }
-      state = FLPS_ERROR;
+      fl.state = FLPS_ERROR;
       break;
     case FLPS_FRAC:
       if(c >= '0' && c <= '9')
@@ -924,33 +955,33 @@ int8_t parse_float(char c)
         fl.frac = fl.frac*10 + (c - '0');
         break;
       }
-      if(c == 'e' || c == 'E')
+      if(c == 'E')
       {
-        state = FLPS_E;
+        fl.state = FLPS_E;
         break;
       }
-      state = FLPS_ERROR;
+      fl.state = FLPS_ERROR;
       break;
     case FLPS_E:
       if(c >= '0' && c <= '9')
       {
         fl.exponent = fl.exponent*10 + (c - '0');
-        state = FLPS_EXP;
+        fl.state = FLPS_EXP;
         break;
       }
       if(c == '+')
       {
         fl.expsign = 1;
-        state = FLPS_EXP;
+        fl.state = FLPS_EXP;
         break;
       }
       if(c == '-')
       {
         fl.expsign = -1;
-        state = FLPS_EXP;
+        fl.state = FLPS_EXP;
         break;
       }
-      state = FLPS_ERROR;
+      fl.state = FLPS_ERROR;
       break;
     case FLPS_EXP:
       if(c >= '0' && c <= '9')
@@ -958,12 +989,12 @@ int8_t parse_float(char c)
         fl.exponent = fl.exponent*10 + (c - '0');
         break;
       }
-      state = FLPS_ERROR;
+      fl.state = FLPS_ERROR;
       break;
     default:
-      state = FLPS_ERROR;
+      fl.state = FLPS_ERROR;
   }
-  return state;
+  return fl.state;
 }
 
 int8_t cmd_frequency(char c)
@@ -1020,7 +1051,7 @@ int8_t cmd_endxr(char c, uint8_t *endxr_s)
   static int8_t state = LIBXSVF_TAP_INIT;
   static int endnamelen = 0;
   static char endname[END_NAME_MAXLEN+1];
-  static uint8_t tendname = -1; // tokenized end state name
+  static int8_t tendname = -1; // tokenized end state name
 
   if(c == '\0')
   { // reset parsing state
@@ -1081,12 +1112,13 @@ int8_t cmd_endir(char c)
   return cmd_endxr(c, &(endxr_state[ENDX_ENDIR]));
 }
 
+// walks the TAP over the list of states
 int8_t cmd_state(char c)
 {
   static int8_t state = SWPS_INIT;
   static int statenamelen = 0;
   static char statename[LIBXSVF_TAP_NAME_MAXLEN+1];
-  static uint8_t tstatename = -1; // tokenized state name
+  static int8_t tstatename = -1; // tokenized state name
 
   if(c == '\0')
   { // reset parsing state
@@ -1167,12 +1199,16 @@ int8_t cmd_state(char c)
   return 0;
 }
 
+// transition between two states
+// with given clock count and timing
 int8_t cmd_runtest(char c)
 {
   static int8_t state = RTPS_INIT;
   static int statenamelen = 0;
-  static char statename[LIBXSVF_TAP_NAME_MAXLEN+1];
-  static uint8_t tstatename = -1; // tokenized state name
+  static char statename[RUNTEST_NAME_MAXLEN+1];
+  static int8_t tstatename = -1; // tokenized state name
+  static int8_t trtword = -1; // tokenized runtest word
+  // static uint32_t run_count = 0;
   if(c == '\0')
   { // reset parsing state
     state = RTPS_INIT;
@@ -1183,9 +1219,33 @@ int8_t cmd_runtest(char c)
   switch(state)
   {
     case RTPS_INIT:
+      // state name doesn't start with T or S
+      // so we can detect clock by its first letter
       if(c >= 'A' && c <= 'Z')
       {
-        if(statenamelen < LIBXSVF_TAP_NAME_MAXLEN)
+        statenamelen = 0;
+        statename[statenamelen++] = c;
+        state = RTPS_WORD;
+        break;
+      }
+      if(c >= '0' && c <= '9')
+      {
+        parse_float('\0');
+        parse_float(c);
+        state = RTPS_NUMBER;
+        break;
+      }
+      if(c == ';')
+      {
+        state = RTPS_COMPLETE;
+        break;
+      }
+      state = RTPS_ERROR;
+      break;
+    case RTPS_WORD:
+      if(c >= 'A' && c <= 'Z')
+      {
+        if(statenamelen < RUNTEST_NAME_MAXLEN)
           statename[statenamelen++] = c;
         else
         {
@@ -1199,49 +1259,59 @@ int8_t cmd_runtest(char c)
       {
         statename[statenamelen] = '\0'; // 0-terminate
         tstatename = search_name(statename, Tap_states);
-        if(tstatename >= 0)
-          PRINTF("t_begin_state_name '%s'", Tap_states[tstatename]);
-        else
+        trtword = search_name(statename, runtest_words);
+        if(tstatename < 0 && trtword < 0)
         {
           state = RTPS_ERROR;
           break;
         }
-        if(c == ' ')
+        // there should be no common words
+        // in Tap_states and runtest_words,
+        // therefore either tstatename or trtword
+        // should match, not both
+        if(tstatename >= 0 && trtword >= 0)
         {
-          state = RTPS_SPACE;
-          statenamelen = 0;
-          tstatename = -1;
+          printf("problem: double match tstatename and trtword '%s'", statename);
+          state = RTPS_ERROR;
           break;
         }
+        if(tstatename >= 0)
+          PRINTF("tstatename '%s'", Tap_states[tstatename]);
+        if(trtword >= 0)
+          PRINTF("trtword '%s'", runtest_words[trtword]);
         if(c == ';')
-        {
           state = RTPS_COMPLETE;
-          break;
+        else
+        {
+          PRINTF("rtps init");
+          state = RTPS_INIT;
         }
         break;
       }
       state = RTPS_ERROR;
       break;
-    case RTPS_SPACE:
-      if(c == ' ')
+    case RTPS_NUMBER:
+      if( (c >= '0' && c <= '9')
+        || c == '.' 
+        || c == '+' || c == '-'
+        || c == 'E' )
       {
-        break;
-      }
-      if(c == ';')
-      {
-        state = RTPS_COMPLETE;
-      }
-      if(c >= 'A' && c <= 'Z')
-      {
-        if(statenamelen < LIBXSVF_TAP_NAME_MAXLEN)
-          statename[statenamelen++] = c;
-        else
+        parse_float(c);
+        if(fl.state == FLPS_ERROR)
         {
-          // name too long, error
-          statename[statenamelen] = '\0'; // 0-terminate
+          PRINTF("float parse error");
           state = RTPS_ERROR;
         }
-        state = RTPS_INIT;
+        break;
+      }
+      if(c == ' ' || c == ';')
+      {
+        PRINTF("FLOAT %d.%dE%c%d ",
+          fl.number, fl.frac, fl.expsign > 0 ? '+' : '-', fl.exponent);
+        if(c == ';')
+          state = RTPS_COMPLETE;
+        else
+          state = RTPS_INIT;
         break;
       }
       state = RTPS_ERROR;
@@ -1380,7 +1450,7 @@ void init_reversenibble()
       v >>= 1;
     }
     ReverseNibble[i] = r;
-    PRINTF("%1X - %1X\n", i, r);
+    // PRINTF("%1X - %1X\n", i, r);
   }
 }
 
@@ -1473,6 +1543,7 @@ int8_t parse_svf_packet(uint8_t *packet, uint32_t index, uint32_t length, uint8_
     {
       // only active text appears here. comments and 
       // multiple spaces are filtered out
+      c = toupper(c); // SVF is case insensitive
       PRINTF("%c", c);
       cmderr = commandstate(c);      
       if(cmderr > 0)
