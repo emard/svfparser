@@ -1204,16 +1204,24 @@ int8_t cmd_state(char c)
 int8_t cmd_runtest(char c)
 {
   static int8_t state = RTPS_INIT;
-  static int statenamelen = 0;
-  static char statename[RUNTEST_NAME_MAXLEN+1];
+  static int wordlen = 0;
+  static char word[RUNTEST_NAME_MAXLEN+1];
   static int8_t tstatename = -1; // tokenized state name
   static int8_t trtword = -1; // tokenized runtest word
+  static int8_t trtword_prev = -1; // tokenized runtest word
+  static int8_t tendstatename = -1; // tokenized state name
+  static struct S_float mintime, maxtime;
   // static uint32_t run_count = 0;
   if(c == '\0')
   { // reset parsing state
     state = RTPS_INIT;
-    statenamelen = 0;
+    wordlen = 0;
     tstatename = -1;
+    trtword = -1;
+    trtword_prev = -1;
+    tendstatename = -1;
+    memset(&mintime, 0, sizeof(struct S_float));
+    memset(&maxtime, 0, sizeof(struct S_float));
     return 0;
   }
   switch(state)
@@ -1223,8 +1231,8 @@ int8_t cmd_runtest(char c)
       // so we can detect clock by its first letter
       if(c >= 'A' && c <= 'Z')
       {
-        statenamelen = 0;
-        statename[statenamelen++] = c;
+        wordlen = 0;
+        word[wordlen++] = c;
         state = RTPS_WORD;
         break;
       }
@@ -1245,21 +1253,21 @@ int8_t cmd_runtest(char c)
     case RTPS_WORD:
       if(c >= 'A' && c <= 'Z')
       {
-        if(statenamelen < RUNTEST_NAME_MAXLEN)
-          statename[statenamelen++] = c;
+        if(wordlen < RUNTEST_NAME_MAXLEN)
+          word[wordlen++] = c;
         else
         {
           // name too long, error
-          statename[statenamelen] = '\0'; // 0-terminate
+          word[wordlen] = '\0'; // 0-terminate
           state = RTPS_ERROR;
         }
         break;
       }
       if(c == ' ' || c == ';')
       {
-        statename[statenamelen] = '\0'; // 0-terminate
-        tstatename = search_name(statename, Tap_states);
-        trtword = search_name(statename, runtest_words);
+        word[wordlen] = '\0'; // 0-terminate
+        tstatename = search_name(word, Tap_states);
+        trtword = search_name(word, runtest_words);
         if(tstatename < 0 && trtword < 0)
         {
           state = RTPS_ERROR;
@@ -1271,21 +1279,48 @@ int8_t cmd_runtest(char c)
         // should match, not both
         if(tstatename >= 0 && trtword >= 0)
         {
-          printf("problem: double match tstatename and trtword '%s'", statename);
+          printf("problem: double match tstatename and trtword '%s'", word);
           state = RTPS_ERROR;
           break;
         }
         if(tstatename >= 0)
-          PRINTF("tstatename '%s'", Tap_states[tstatename]);
+        {
+          if(trtword_prev == RT_WORD_ENDSTATE)
+          {
+            tendstatename = tstatename;
+            PRINTF("tendstatename '%s'", Tap_states[tendstatename]);
+          }
+          else
+            PRINTF("tstatename '%s'", Tap_states[tstatename]);
+        }
         if(trtword >= 0)
+        {
           PRINTF("trtword '%s'", runtest_words[trtword]);
+          // at runtest word SCK or TCK -> run count
+          // SEC -> min/max time
+          if(trtword == RT_WORD_SCK || trtword == RT_WORD_TCK)
+          {
+            PRINTF("<-RUN COUNT");
+          }
+          if(trtword == RT_WORD_SEC)
+          {
+            if(trtword_prev == RT_WORD_MAXIMUM)
+            {
+              PRINTF("<-maxtime=%d.%dE%c%d ",
+                maxtime.number, maxtime.frac, maxtime.expsign > 0 ? '+' : '-', maxtime.exponent);
+            }
+            else
+            {
+              PRINTF("<-mintime=%d.%dE%c%d ",
+                mintime.number, mintime.frac, mintime.expsign > 0 ? '+' : '-', mintime.exponent);
+            }
+          }
+        }
+        trtword_prev = trtword;
         if(c == ';')
           state = RTPS_COMPLETE;
         else
-        {
-          PRINTF("rtps init");
           state = RTPS_INIT;
-        }
         break;
       }
       state = RTPS_ERROR;
@@ -1306,6 +1341,16 @@ int8_t cmd_runtest(char c)
       }
       if(c == ' ' || c == ';')
       {
+        if(trtword_prev == RT_WORD_MAXIMUM)
+        {
+          PRINTF("MAX:");
+          memcpy(&maxtime, &fl, sizeof(struct S_float));
+        }
+        else
+        {
+          PRINTF("MIN:");
+          memcpy(&mintime, &fl, sizeof(struct S_float));
+        }
         PRINTF("FLOAT %d.%dE%c%d ",
           fl.number, fl.frac, fl.expsign > 0 ? '+' : '-', fl.exponent);
         if(c == ';')
