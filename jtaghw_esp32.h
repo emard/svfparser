@@ -3,6 +3,11 @@
 
 #include <stdint.h>
 
+#define TCK 14
+#define TMS 15
+#define TDI 13
+#define TDO 12
+
 // structure ready for the spi accelerated jtag
 struct S_jtaghw
 {
@@ -16,8 +21,10 @@ struct S_jtaghw
   uint32_t pad_bits; // number of padding bits (not 0 if exist)  
 };
 
-extern struct S_jtaghw JTAG_TDI, JTAG_TDO;
+extern struct S_jtaghw JTAG_TDI, JTAG_TDO; // filled by svfparser, TDI field overwritten by jtaghw
 
 void jtag_tdi_tdo(struct S_jtaghw *tdi, struct S_jtaghw *tdo);
+void jtag_open();
+void jtag_close();
 
 #endif
