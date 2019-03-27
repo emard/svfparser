@@ -432,9 +432,15 @@ void play_bitsequence(struct S_bitseq *seq)
     int bits_remaining = seq->length - 8 * bytelen;
     int firstbyte = (seq->digitindex[i]+1)/2;
     uint8_t *mem = seq->field[i] + firstbyte;
-    // int complete_bytes = bits_remaining < 0 ? ( -bits_remaining > 3 ? bytelen - 1 : bytelen) : bytelen;
+    // int complete_bytes = bits_remaining < 0 ? bytelen - 1 : bytelen;
     int complete_bytes = bits_remaining < 0 && -bits_remaining > 3 ? bytelen - 1 : bytelen;
     uint8_t pad_byte = i == BSF_MASK || i == BSF_SMASK ? 0xFF : 0x00;
+    int print_first_nibble = bits_remaining >= 0 ?
+        ((bits_remaining & 7) >= 1 && (bits_remaining & 7) <= 4)  // when padding bits
+      : ( -bits_remaining >= 1 && -bits_remaining <= 3); // when truncating bits
+    print_first_nibble = print_first_nibble ? 1 : 0;
+    // correction to the bits remaining
+    bits_remaining = seq->length - 8 * bytelen + 4 * print_first_nibble;
     
     // initialize (reset) bitbang pointers
     JTAG_TDI.header = NULL;
@@ -446,7 +452,7 @@ void play_bitsequence(struct S_bitseq *seq)
     JTAG_TDI.pad = pad_byte; // 0 or 0xFF padding value
     JTAG_TDI.pad_bits = 0; // number of padding bits (not 0 if exist)
 
-    #if 0
+    #if 9
     PRINTF("bytelen=%d\n", bytelen);
     PRINTF("bits_remaining=%d\n", bits_remaining);
     int memlen = seq->allocated[i] - firstbyte;
@@ -460,6 +466,7 @@ void play_bitsequence(struct S_bitseq *seq)
     #endif
     PRINTF("\n");
     PRINTF("reading from %d\n", firstbyte);
+    PRINTF("print first nibble %d\n", print_first_nibble);
     PRINTF("field %s (%d digits)\n", bsf_name[i], digitlen);
     #endif
     PRINTF("%5s ", bsf_name[i]);
@@ -467,10 +474,7 @@ void play_bitsequence(struct S_bitseq *seq)
     ||  (digitlen > 0 && i == BSF_MASK && tdo_digitlen > 0)
     )
     {
-      int bstart = 0;
-      int print_first_nibble = bits_remaining >= 0 ? 
-        ((bits_remaining & 7) >= 1 && (bits_remaining & 7) <= 4)  // when padding bits
-      : ( -bits_remaining >= 1 && -bits_remaining <= 3); // when truncating bits
+      int total_bits_remaining = seq->length;
       if(print_first_nibble)
       {
         // nibble
@@ -479,39 +483,95 @@ void play_bitsequence(struct S_bitseq *seq)
         #else
         PRINTF("0x%01X ", mem[0] >> 4);
         #endif
-        bstart = 1;
+        // print_first_nibble = 1;
         JTAG_TDI.header = mem;
         JTAG_TDI.header_bits = 4;
+        total_bits_remaining -= 4;
       }
       if(complete_bytes > 0)
       {
         PRINTF("0x");
-        for(j = bstart; j < complete_bytes; j++)
+        for(j = print_first_nibble; j < complete_bytes; j++)
+        {
           #if REVERSE_NIBBLE
           PRINTF("%01X%01X", ReverseNibble[mem[j] >> 4], ReverseNibble[mem[j] & 0xF]);
           #else
           PRINTF("%01X%01X", mem[j] & 0xF, mem[j] >> 4);
           #endif
+          total_bits_remaining -= 8;
+        }
         PRINTF(" ");
-        JTAG_TDI.data = mem + bstart;
-        JTAG_TDI.data_bytes = complete_bytes-bstart;
+        JTAG_TDI.data = mem + print_first_nibble;
+        JTAG_TDI.data_bytes = complete_bytes-print_first_nibble;
       }
-      if(bstart != 0 && bits_remaining > 0)
-      { // nibble
-        #if REVERSE_NIBBLE
-        PRINTF("0x%01X ", ReverseNibble[mem[j] >> 4]);
-        #else
-        PRINTF("0x%01X ", mem[j] & 0xF);
-        #endif
+      uint8_t b_remaining = (8+bits_remaining) & 7;
+      //PRINTF("total remain %d b_rem %d ", total_bits_remaining, b_remaining);
+      if(print_first_nibble != 0)
+      {
+        if(total_bits_remaining >= 4 && b_remaining <= total_bits_remaining)
+        {
+          // full nibble
+          #if REVERSE_NIBBLE
+          PRINTF("0x%01X ", ReverseNibble[mem[j] >> 4]);
+          #else
+          PRINTF("0x%01X ", mem[j] & 0xF);
+          #endif
+          total_bits_remaining -= 4;
+        }
+        if(total_bits_remaining > 0 && b_remaining <= total_bits_remaining)
+        {
+          uint8_t byte_partial = mem[j];
+          #if REVERSE_NIBBLE
+          #else
+            PRINTF("0b");
+            for(j = 0; j < b_remaining; j++, byte_partial >>= 1)
+              PRINTF("%d", byte_partial & 1);
+            PRINTF(" ");
+          #endif
+          total_bits_remaining -= b_remaining;
+        }
         // patch upper nibble of mem[j] with the nibble from pad_byte
         mem[j] |= pad_byte & 0xF0;
         JTAG_TDI.trailer = mem + j;
         JTAG_TDI.trailer_bits = 4;
       }
+      else
+      {
+        if(total_bits_remaining >= 4 && bits_remaining <= total_bits_remaining)
+        {
+          // full nibble
+          #if REVERSE_NIBBLE
+          PRINTF("0x%01X ", ReverseNibble[mem[j] >> 4]);
+          #else
+          PRINTF("0x%01X ", mem[j] & 0xF);
+          #endif
+          total_bits_remaining -= 4;
+        }
+        if(total_bits_remaining > 0 && b_remaining <= total_bits_remaining)
+        {
+          uint8_t byte_partial = mem[j];
+          #if REVERSE_NIBBLE
+          #else
+            PRINTF("0b");
+            for(j = 0; j < b_remaining; j++, byte_partial >>= 1)
+              PRINTF("%d", byte_partial & 1);
+            PRINTF(" ");
+          #endif
+          total_bits_remaining -= b_remaining;
+        }
+        // patch upper nibble of mem[j] with the nibble from pad_byte
+        mem[j] |= pad_byte & 0xF0;
+        JTAG_TDI.trailer = mem + j;
+        JTAG_TDI.trailer_bits = 4;
+      }
+      // **************** completed from data, now padding *****************
+      //PRINTF("total remain %d ", total_bits_remaining);
       if(bits_remaining != 0)
       {
         uint8_t byte_remaining = pad_byte;
         uint8_t additional_bits = (8+bits_remaining) & 7;
+        if(print_first_nibble != 0 && additional_bits > 4)
+          additional_bits -= 4;
         uint8_t additional_bytes = bits_remaining / 8;
         if(bits_remaining < 0)
           byte_remaining = mem[j];
@@ -533,6 +593,7 @@ void play_bitsequence(struct S_bitseq *seq)
 
               #else
               uint32_t mask_byte = ((uint32_t)0xFF) << (additional_bits); // mask for lower bits
+              // mask_byte = 0xFF; // FIXME
               uint8_t and_byte = mask_byte;
               #endif
               mem[j] |= pad_byte & and_byte;
@@ -572,7 +633,7 @@ void play_bitsequence(struct S_bitseq *seq)
           }
           else
           {
-            PRINTF("0b");
+            PRINTF("*0b");
             #if REVERSE_NIBBLE
             for(j = 0; j < additional_bits; j++, byte_remaining <<= 1)
               PRINTF("%d", byte_remaining >> 7);
