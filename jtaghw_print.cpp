@@ -45,7 +45,7 @@ void jtag_tdi_tdo(struct S_jtaghw *tdi, struct S_jtaghw *tdo)
       if(tdi->trailer_bits > 4)
       {
         byte_remaining <<= 4;
-        PRINTF("0xb");
+        PRINTF("0b");
         for(j = 4; j < tdi->trailer_bits; j++, byte_remaining <<= 1)
           PRINTF("%d", byte_remaining >> 7);
         PRINTF(" ");
@@ -55,7 +55,7 @@ void jtag_tdi_tdo(struct S_jtaghw *tdi, struct S_jtaghw *tdo)
       if(tdi->trailer_bits > 4)
       {
         byte_remaining >>= 4;
-        PRINTF("0xb");
+        PRINTF("0b");
         for(j = 4; j < tdi->trailer_bits; j++, byte_remaining >>= 1)
           PRINTF("%d", byte_remaining & 1);
         PRINTF(" ");

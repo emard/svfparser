@@ -523,21 +523,24 @@ void play_bitsequence(struct S_bitseq *seq)
             // bits in mem[] are reordered
             // for transmission therefore we have
             // small bitwise gymnastics:
-            #if 1
-            #if REVERSE_NIBBLE
-            uint8_t mask_byte = 0xFF >> (8-additional_bits); // mask for lower bits
-            uint8_t and_byte = (ReverseNibble[mask_byte >> 4]) 
-                             | (ReverseNibble[mask_byte & 0xF] << 4);
+            if(bits_remaining < 0)
+            {
+              #if REVERSE_NIBBLE
+              uint8_t mask_byte = 0xFF >> (8-additional_bits); // mask for lower bits
+              uint8_t and_byte = (ReverseNibble[mask_byte >> 4])
+                               | (ReverseNibble[mask_byte & 0xF] << 4);
 
-            #else
-            uint32_t mask_byte = ((uint32_t)0xFF) << (additional_bits); // mask for lower bits
-            uint8_t and_byte = mask_byte;
-            #endif
-            mem[j] |= pad_byte & and_byte;
-            #endif
-            JTAG_TDI.trailer = mem + j;
-            JTAG_TDI.trailer_bits = additional_bits;
-            JTAG_TDI.pad_bits = additional_bytes * 8;
+              #else
+              uint32_t mask_byte = ((uint32_t)0xFF) << (additional_bits); // mask for lower bits
+              uint8_t and_byte = mask_byte;
+              #endif
+              mem[j] |= pad_byte & and_byte;
+              JTAG_TDI.trailer = mem + j;
+              JTAG_TDI.trailer_bits = additional_bits;
+              JTAG_TDI.pad_bits = additional_bytes * 8;
+            }
+            else
+              JTAG_TDI.pad_bits = additional_bits;
           }
           if(additional_bits >= 4)
           {
@@ -546,7 +549,7 @@ void play_bitsequence(struct S_bitseq *seq)
               PRINTF("0x%01X ", ReverseNibble[byte_remaining >> 4]);
               if(additional_bits > 4)
               {
-                PRINTF("0xb");
+                PRINTF("0b");
                 byte_remaining <<= 4;
                 for(j = 4; j < additional_bits; j++, byte_remaining <<= 1)
                   PRINTF("%d", byte_remaining >> 7);
@@ -556,7 +559,7 @@ void play_bitsequence(struct S_bitseq *seq)
               PRINTF("0x%01X ", byte_remaining & 0xF);
               if(additional_bits > 4)
               {
-                PRINTF("0xb");
+                PRINTF("0b");
                 byte_remaining >>= 4;
                 for(j = 4; j < additional_bits; j++, byte_remaining >>= 1)
                   PRINTF("%d", byte_remaining & 1);
