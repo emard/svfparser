@@ -432,7 +432,8 @@ void play_bitsequence(struct S_bitseq *seq)
     int bits_remaining = seq->length - 8 * bytelen;
     int firstbyte = (seq->digitindex[i]+1)/2;
     uint8_t *mem = seq->field[i] + firstbyte;
-    int complete_bytes = bits_remaining < 0 ? bytelen - 1 : bytelen;
+    // int complete_bytes = bits_remaining < 0 ? ( -bits_remaining > 3 ? bytelen - 1 : bytelen) : bytelen;
+    int complete_bytes = bits_remaining < 0 && -bits_remaining > 3 ? bytelen - 1 : bytelen;
     uint8_t pad_byte = i == BSF_MASK || i == BSF_SMASK ? 0xFF : 0x00;
     
     // initialize (reset) bitbang pointers
