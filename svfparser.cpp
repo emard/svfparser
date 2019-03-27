@@ -540,7 +540,9 @@ void play_bitsequence(struct S_bitseq *seq)
               JTAG_TDI.pad_bits = additional_bytes * 8;
             }
             else
-              JTAG_TDI.pad_bits = additional_bits;
+            {
+              JTAG_TDI.pad_bits = additional_bits + additional_bytes * 8;
+            }
           }
           if(additional_bits >= 4)
           {
