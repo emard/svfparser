@@ -438,9 +438,10 @@ void play_bitsequence(struct S_bitseq *seq)
     int print_first_nibble = bits_remaining >= 0 ?
         ((bits_remaining & 7) >= 1 && (bits_remaining & 7) <= 4)  // when padding bits
       : ( -bits_remaining >= 1 && -bits_remaining <= 3); // when truncating bits
-    print_first_nibble = print_first_nibble ? 1 : 0;
+    print_first_nibble = ((seq->length+3)/4 + 2*bytelen + digitlen) & 1;
+    // print_first_nibble = print_first_nibble ? 1 : 0;
     // correction to the bits remaining
-    bits_remaining = seq->length - 8 * bytelen + 4 * print_first_nibble;
+    // bits_remaining = seq->length - 8 * bytelen + 4 * print_first_nibble;
     
     // initialize (reset) bitbang pointers
     JTAG_TDI.header = NULL;
