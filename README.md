@@ -24,3 +24,4 @@ bitbangs data to JTAG and reuses the same RAM for new data.
     [ ] collect TDO TDI MASK fields and send to hardware
     [x] wrong output from example with 28-bit and less
     [x] wrong last nibble of MASK 37-bit example
+    [ ] bit size 20 -> output too short, 17 bits
