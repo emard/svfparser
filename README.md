@@ -22,4 +22,5 @@ bitbangs data to JTAG and reuses the same RAM for new data.
     [ ] overrun not reported: 29 bit length, 31 bit content
     [ ] option to disable bit reversal (when SPI can send LSB first)
     [ ] collect TDO TDI MASK fields and send to hardware
-    [ ] wrong output from example with 28-bit and less 
+    [x] wrong output from example with 28-bit and less
+    [x] wrong last nibble of MASK 37-bit example

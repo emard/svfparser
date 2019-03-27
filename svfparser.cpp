@@ -510,7 +510,7 @@ void play_bitsequence(struct S_bitseq *seq)
       if(bits_remaining != 0)
       {
         uint8_t byte_remaining = pad_byte;
-        uint8_t additional_bits = bits_remaining & 7;
+        uint8_t additional_bits = (8+bits_remaining) & 7;
         uint8_t additional_bytes = bits_remaining / 8;
         if(bits_remaining < 0)
           byte_remaining = mem[j];
@@ -523,15 +523,18 @@ void play_bitsequence(struct S_bitseq *seq)
             // bits in mem[] are reordered
             // for transmission therefore we have
             // small bitwise gymnastics:
+            #if 1
             #if REVERSE_NIBBLE
             uint8_t mask_byte = 0xFF >> (8-additional_bits); // mask for lower bits
             uint8_t and_byte = (ReverseNibble[mask_byte >> 4]) 
                              | (ReverseNibble[mask_byte & 0xF] << 4);
+
             #else
-            uint8_t mask_byte = 0xFF << (8-additional_bits); // mask for lower bits
+            uint32_t mask_byte = ((uint32_t)0xFF) << (additional_bits); // mask for lower bits
             uint8_t and_byte = mask_byte;
             #endif
             mem[j] |= pad_byte & and_byte;
+            #endif
             JTAG_TDI.trailer = mem + j;
             JTAG_TDI.trailer_bits = additional_bits;
             JTAG_TDI.pad_bits = additional_bytes * 8;
@@ -818,12 +821,12 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
             if( (digitindex & 1) != 0 )
               value_byte = hexdigit; // with 4 bit leading zeros
             else
-              value_byte = seq->field[tbfname][byteindex] | (hexdigit<<4);
+              value_byte = (seq->field[tbfname][byteindex] & 0xF) | (hexdigit<<4);
             #else
             if( (digitindex & 1) != 0 )
               value_byte = hexdigit << 4;
             else
-              value_byte = seq->field[tbfname][byteindex] | (hexdigit); // with 4 bit leading zeros
+              value_byte = (seq->field[tbfname][byteindex] & 0xF0) | (hexdigit); // with 4 bit leading zeros
             #endif
             seq->field[tbfname][byteindex] = value_byte;
             // PRINTF("written %s[%d]=%02X\n", bsf_name[tbfname] , byteindex, value_byte);
