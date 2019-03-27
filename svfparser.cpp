@@ -113,28 +113,28 @@ enum cmd_detection_states
 // TAP states enumerated/tokenized
 enum libxsvf_tap_state 
 {
-	/* Special States */
-	LIBXSVF_TAP_INIT = 0,
-	LIBXSVF_TAP_RESET = 1,
-	LIBXSVF_TAP_IDLE = 2,
-	/* DR States */
-	LIBXSVF_TAP_DRSELECT = 3,
-	LIBXSVF_TAP_DRCAPTURE = 4,
-	LIBXSVF_TAP_DRSHIFT = 5,
-	LIBXSVF_TAP_DREXIT1 = 6,
-	LIBXSVF_TAP_DRPAUSE = 7,
-	LIBXSVF_TAP_DREXIT2 = 8,
-	LIBXSVF_TAP_DRUPDATE = 9,
-	/* IR States */
-	LIBXSVF_TAP_IRSELECT = 10,
-	LIBXSVF_TAP_IRCAPTURE = 11,
-	LIBXSVF_TAP_IRSHIFT = 12,
-	LIBXSVF_TAP_IREXIT1 = 13,
-	LIBXSVF_TAP_IRPAUSE = 14,
-	LIBXSVF_TAP_IREXIT2 = 15,
-	LIBXSVF_TAP_IRUPDATE = 16,
-	/* numbef of them */
-	LIBXSVF_TAP_NUM = 17,
+  /* Special States */
+  LIBXSVF_TAP_INIT = 0,
+  LIBXSVF_TAP_RESET = 1,
+  LIBXSVF_TAP_IDLE = 2,
+  /* DR States */
+  LIBXSVF_TAP_DRSELECT = 3,
+  LIBXSVF_TAP_DRCAPTURE = 4,
+  LIBXSVF_TAP_DRSHIFT = 5,
+  LIBXSVF_TAP_DREXIT1 = 6,
+  LIBXSVF_TAP_DRPAUSE = 7,
+  LIBXSVF_TAP_DREXIT2 = 8,
+  LIBXSVF_TAP_DRUPDATE = 9,
+  /* IR States */
+  LIBXSVF_TAP_IRSELECT = 10,
+  LIBXSVF_TAP_IRCAPTURE = 11,
+  LIBXSVF_TAP_IRSHIFT = 12,
+  LIBXSVF_TAP_IREXIT1 = 13,
+  LIBXSVF_TAP_IRPAUSE = 14,
+  LIBXSVF_TAP_IREXIT2 = 15,
+  LIBXSVF_TAP_IRUPDATE = 16,
+  /* numbef of them */
+  LIBXSVF_TAP_NUM = 17,
 };
 
 const char *Tap_states[] =
@@ -450,8 +450,13 @@ void play_bitsequence(struct S_bitseq *seq)
     PRINTF("bits_remaining=%d\n", bits_remaining);
     int memlen = seq->allocated[i] - firstbyte;
     PRINTF("memlen=%d\n", memlen);
+    #if REVERSE_NIBBLE
     for(j = 0; j < memlen; j++)
       PRINTF("%01X%01X ", ReverseNibble[mem[j] >> 4], ReverseNibble[mem[j] & 0xF]);
+    #else
+    for(j = 0; j < memlen; j++)
+      PRINTF("%02X ", mem[j]);
+    #endif
     PRINTF("\n");
     PRINTF("reading from %d\n", firstbyte);
     PRINTF("field %s (%d digits)\n", bsf_name[i], digitlen);
@@ -462,10 +467,17 @@ void play_bitsequence(struct S_bitseq *seq)
     )
     {
       int bstart = 0;
-      if( (bits_remaining & 7) >= 1 && (bits_remaining & 7) <= 4)
+      int print_first_nibble = bits_remaining >= 0 ? 
+        ((bits_remaining & 7) >= 1 && (bits_remaining & 7) <= 4)  // when padding bits
+      : ( -bits_remaining >= 1 && -bits_remaining <= 3); // when truncating bits
+      if(print_first_nibble)
       {
         // nibble
+        #if REVERSE_NIBBLE
         PRINTF("0x%01X ", ReverseNibble[mem[0] & 0xF]);
+        #else
+        PRINTF("0x%01X ", mem[0] >> 4);
+        #endif
         bstart = 1;
         JTAG_TDI.header = mem;
         JTAG_TDI.header_bits = 4;
@@ -474,14 +486,22 @@ void play_bitsequence(struct S_bitseq *seq)
       {
         PRINTF("0x");
         for(j = bstart; j < complete_bytes; j++)
+          #if REVERSE_NIBBLE
           PRINTF("%01X%01X", ReverseNibble[mem[j] >> 4], ReverseNibble[mem[j] & 0xF]);
+          #else
+          PRINTF("%01X%01X", mem[j] & 0xF, mem[j] >> 4);
+          #endif
         PRINTF(" ");
         JTAG_TDI.data = mem + bstart;
         JTAG_TDI.data_bytes = complete_bytes-bstart;
       }
       if(bstart != 0 && bits_remaining > 0)
       { // nibble
+        #if REVERSE_NIBBLE
         PRINTF("0x%01X ", ReverseNibble[mem[j] >> 4]);
+        #else
+        PRINTF("0x%01X ", mem[j] & 0xF);
+        #endif
         // patch upper nibble of mem[j] with the nibble from pad_byte
         mem[j] |= pad_byte & 0xF0;
         JTAG_TDI.trailer = mem + j;
@@ -503,24 +523,63 @@ void play_bitsequence(struct S_bitseq *seq)
             // bits in mem[] are reordered
             // for transmission therefore we have
             // small bitwise gymnastics:
+            #if REVERSE_NIBBLE
             uint8_t mask_byte = 0xFF >> (8-additional_bits); // mask for lower bits
             uint8_t and_byte = (ReverseNibble[mask_byte >> 4]) 
                              | (ReverseNibble[mask_byte & 0xF] << 4);
+            #else
+            uint8_t mask_byte = 0xFF << (8-additional_bits); // mask for lower bits
+            uint8_t and_byte = mask_byte;
+            #endif
             mem[j] |= pad_byte & and_byte;
             JTAG_TDI.trailer = mem + j;
             JTAG_TDI.trailer_bits = additional_bits;
             JTAG_TDI.pad_bits = additional_bytes * 8;
           }
-          PRINTF("0b");
-          for(j = 0; j < additional_bits; j++, byte_remaining <<= 1)
-            PRINTF("%d", byte_remaining >> 7);
-          PRINTF(" ");
+          if(additional_bits >= 4)
+          {
+            // byte_remaining = mem[j];
+            #if REVERSE_NIBBLE
+              PRINTF("0x%01X ", ReverseNibble[byte_remaining >> 4]);
+              if(additional_bits > 4)
+              {
+                PRINTF("0xb");
+                byte_remaining <<= 4;
+                for(j = 4; j < additional_bits; j++, byte_remaining <<= 1)
+                  PRINTF("%d", byte_remaining >> 7);
+                PRINTF(" ");
+              }
+            #else
+              PRINTF("0x%01X ", byte_remaining & 0xF);
+              if(additional_bits > 4)
+              {
+                PRINTF("0xb");
+                byte_remaining >>= 4;
+                for(j = 4; j < additional_bits; j++, byte_remaining >>= 1)
+                  PRINTF("%d", byte_remaining & 1);
+                PRINTF(" ");
+              }
+            #endif
+          }
+          else
+          {
+            PRINTF("0b");
+            #if REVERSE_NIBBLE
+            for(j = 0; j < additional_bits; j++, byte_remaining <<= 1)
+              PRINTF("%d", byte_remaining >> 7);
+            #else
+            // PRINTF("(%02X)", byte_remaining);
+            for(j = 0; j < additional_bits; j++, byte_remaining >>= 1)
+              PRINTF("%d", byte_remaining & 1);
+            #endif
+            PRINTF(" ");
+          }
         }
         if(additional_bytes > 0)
         {
           PRINTF("0x");
           for(j = 0; j < additional_bytes; j++)
-            PRINTF("%1X%1X", pad_byte >> 4, pad_byte & 0xF);
+            PRINTF("%02X", pad_byte);
         }
       }
     }
@@ -741,7 +800,11 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
         }
         // fill hex into allocated space
         // conversion from ascii to hex digit (binary lower 4-bits)
+        #if REVERSE_NIBBLE
         uint8_t hexdigit = ReverseNibble[c < 'A' ? c - '0' : c + 10 - 'A'];
+        #else
+        uint8_t hexdigit = c < 'A' ? c - '0' : c + 10 - 'A';
+        #endif
         if( digitindex >= 0 )
         {
           // buffer the data for later use
@@ -751,12 +814,19 @@ int8_t cmd_bitsequence(char c, struct S_bitseq *seq)
           {
             uint8_t value_byte;
             // PRINTF("add digit #%d %s %X\n", digitindex, bsf_name[tbfname], hexdigit);
+            #if REVERSE_NIBBLE
             if( (digitindex & 1) != 0 )
               value_byte = hexdigit; // with 4 bit leading zeros
             else
               value_byte = seq->field[tbfname][byteindex] | (hexdigit<<4);
+            #else
+            if( (digitindex & 1) != 0 )
+              value_byte = hexdigit << 4;
+            else
+              value_byte = seq->field[tbfname][byteindex] | (hexdigit); // with 4 bit leading zeros
+            #endif
             seq->field[tbfname][byteindex] = value_byte;
-            // PRINTF("written %s to %d\n", bsf_name[tbfname] , byteindex);
+            // PRINTF("written %s[%d]=%02X\n", bsf_name[tbfname] , byteindex, value_byte);
             seq->digitindex[tbfname] = --digitindex;
           }
         }
@@ -1431,8 +1501,12 @@ void init_reversenibble()
       r |= v & 1;
       v >>= 1;
     }
-    ReverseNibble[i] = r;
-    // PRINTF("%1X - %1X\n", i, r);
+    #if REVERSE_NIBBLE
+      ReverseNibble[i] = r;
+      // PRINTF("%1X - %1X\n", i, r);
+    #else
+      ReverseNibble[i] = i;
+    #endif
   }
 }
 
